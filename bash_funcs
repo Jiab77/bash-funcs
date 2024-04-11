@@ -1,0 +1,460 @@
+#!/usr/bin/env bash
+#
+# This file must be sourced
+#
+# Collection of Bash functions to be included in any scripts
+#
+# Made by Jiab77
+#
+# Version 0.0.0
+
+# Colors
+RED="\033[1;31m"
+GREEN="\033[1;32m"
+YELLOW="\033[1;33m"
+BLUE="\033[1;34m"
+PURPLE="\033[1;35m"
+CYAN="\033[1;36m"
+WHITE="\033[1;37m"
+NC="\033[0m"
+NL="\n"
+TAB="\t"
+
+# Functions
+function die() {
+  echo -e "${NL}${WHITE}[ERROR] ${RED}$*${NC}${NL}" >&2
+  exit 255
+}
+function log() {
+  echo -e "$1"
+}
+function log_err() {
+  echo -e "$1" >&2
+}
+function get_version() {
+  if [[ -n $(command -v awk 2>/dev/null) ]]; then
+    grep -m1 "# Version" $0 | awk '{ print $3 }'
+  else
+    grep -m1 "# Version" $0 | cut -d" " -f3
+  fi
+}
+function show_version() {
+  echo -e "${NL}Version: $(get_version)${NL}" ; exit
+}
+function compare_version() {
+  printf '%s\n' "$@" | sort -C -V
+}
+function set_console_title() {
+  local TITLE ; TITLE="$1"
+  echo -ne "\033]0;$TITLE\007"
+}
+function get_env() {
+  if [[ $# -eq 1 ]]; then
+    sort <(printenv) | grep -i "$1"
+  else
+    sort <(printenv)
+  fi
+}
+function set_env() {
+  if [[ $# -eq 2 ]]; then
+    export "$1"="$2"
+  else
+    return 1
+  fi
+}
+function get_thermal_zones_count() {
+  local TZ_COUNT
+  TZ_COUNT=$(ls -1d /sys/class/thermal/thermal_zone* | wc -l)
+  echo -n $((TZ_COUNT-1))
+}
+function check_device_temp() {
+  if [[ $1 -le 30 ]]; then
+    echo -e "${CYAN}cooling down${NC}"
+  elif [[ $1 -le 60 ]]; then
+    echo -e "${GREEN}all good${NC}"
+  elif [[ $1 -lt 80 && $1 -gt 60 ]]; then
+    echo -e "${YELLOW}getting hot${NC}"
+  elif [[ $1 -ge 80 ]]; then
+    echo -e "${RED}critical${NC}"
+  else
+    echo -e "${BLUE}undefined${NC}"
+  fi
+}
+function get_device_temp() {
+  if [[ $(printenv | grep -ci android) -ne 0 && $(printenv | grep -ci termux) -ne 0 ]]; then
+    if [[ -n $(command -v termux-battery-status 2>/dev/null) ]]; then
+      termux-battery-status | jq -rc .temperature | cut -d"." -f1
+    fi
+  else
+    for N in $(seq 0 1 $(get_thermal_zones_count)); do
+        echo -e "$(($(cat /sys/class/thermal/thermal_zone${N}/temp)/1000))"
+    done
+  fi
+
+  return 1
+}
+function show_device_temp() {
+  for N in $(seq 0 1 $(get_thermal_zones_count)) ; do
+    if [[ -r "/sys/class/thermal/thermal_zone${N}/type" ]]; then
+      echo "$(cat /sys/class/thermal/thermal_zone"${N}"/type) - $(($(cat /sys/class/thermal/thermal_zone"${N}"/temp)/1000))°C - $(check_device_temp $(($(cat /sys/class/thermal/thermal_zone"${N}"/temp)/1000)))"
+    fi
+  done
+}
+function get_hostname_from_session() {
+  if [[ -n $SESSION_MANAGER ]]; then
+    cut -d"/" -s -f2 <<< $SESSION_MANAGER | cut -d":" -f1
+    return $?
+  fi
+  return 1
+}
+function get_shell_id() {
+  if [[ -n $PANTHEON_TERMINAL_ID ]]; then
+    echo -n $PANTHEON_TERMINAL_ID
+    return $?
+  fi
+  return 1
+}
+function get_shell_level() {
+  if [[ -n $SHLVL ]]; then
+    echo -n $SHLVL
+    return $?
+  fi
+  return 1
+}
+function get_user_desktop() {
+  if [[ -n $XDG_SESSION_DESKTOP ]]; then
+    echo -n $XDG_SESSION_DESKTOP
+  elif [[ -n $XDG_CURRENT_DESKTOP ]]; then
+    echo -n "${XDG_CURRENT_DESKTOP,,}"
+  elif [[ -n $DESKTOP_SESSION ]]; then
+    echo -n $DESKTOP_SESSION
+  elif [[ -n $GDMSESSION ]]; then
+    echo -n $GDMSESSION
+  else
+    return 1
+  fi
+  return $?
+}
+function is_wayland() {
+  [[ -n $XDG_SESSION_TYPE && $XDG_SESSION_TYPE == "wayland" ]] && return 0
+  [[ -n $WAYLAND_DISPLAY ]] && return 0
+  return 1
+}
+function is_xorg() {
+  [[ -n $XDG_SESSION_TYPE && $XDG_SESSION_TYPE == "x11" ]] && return 0
+  [[ -n $DISPLAY ]] && return 0
+  return 1
+}
+function is_root() {
+  [[ $(id -u) -ne 0 ]] && return 1
+  return 0
+}
+function is_real_root() {
+  [[ $(id -u) -ne 0 ]] && die "You must run this script as root or with '${YELLOW}sudo${RED}'."
+  return 0
+}
+function clean_str() {
+  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+
+  local RAW_STR ; RAW_STR="$1"
+  local NEW_STR ; NEW_STR="${RAW_STR//\'/}"
+  echo -n "$NEW_STR"
+}
+function str_replace() {
+  [[ $# -gt 3 ]] && die "[$(basename "$0")] Too many arguments."
+  [[ $# -lt 3 ]] && die "[$(basename "$0")] Too few arguments."
+
+  local SEARCH ; SEARCH="$1"
+  local REPLACE ; REPLACE="$2"
+  local SUBJECT ; SUBJECT="$3"
+  echo -n "${SUBJECT//$SEARCH/$REPLACE}"
+}
+function str_to_lower() {
+  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+
+  local RAW_STR ; RAW_STR="$1"
+  local NEW_STR ; NEW_STR="${RAW_STR,,}"
+  echo -n "$NEW_STR"
+}
+function str_to_upper() {
+  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+
+  local RAW_STR ; RAW_STR="$1"
+  local NEW_STR ; NEW_STR="${RAW_STR^^}"
+  echo -n "$NEW_STR"
+}
+function str_lower_to_cap() {
+  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+
+  local RAW_STR ; RAW_STR="$1"
+  local NEW_STR ; NEW_STR="${RAW_STR,}"
+  echo -n "$NEW_STR"
+}
+function str_upper_to_cap() {
+  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+
+  local RAW_STR ; RAW_STR="$1"
+  local NEW_STR ; NEW_STR="${RAW_STR^}"
+  echo -n "$NEW_STR"
+}
+function set_script_dir() {
+  [[ -z $SCRIPT_DIR ]] && SCRIPT_DIR="$(dirname "$0")"
+}
+function set_script_file() {
+  [[ -z $SCRIPT_FILE ]] && SCRIPT_FILE="$(basename "$0")"
+}
+function set_script_name() {
+  [[ -z $SCRIPT_FILE ]] && set_script_file
+  [[ -n $SCRIPT_FILE && -z $SCRIPT_NAME ]] && SCRIPT_NAME="${SCRIPT_FILE/.sh/}"
+}
+function get_dir_name() {
+  [[ -z $SCRIPT_DIR ]] && SCRIPT_DIR="$(dirname "$0")"
+  echo -n "$(basename "$SCRIPT_DIR")"
+}
+function get_script_name() {
+  if [[ -n $SCRIPT_FILE ]]; then
+    echo -n "${SCRIPT_FILE/.sh/}"
+  else
+    SCRIPT_FILE="$(basename "$0")"
+    echo -n "${SCRIPT_FILE/.sh/}"
+  fi
+}
+function set_config_file() {
+  [[ -z $SCRIPT_NAME ]] && set_script_name
+  [[ -z $CONFIG_FILE ]] && CONFIG_FILE="$(get_script_name).conf"
+}
+function load_xdg_defs() {
+  if [[ -r ~/.config/user-dirs.dirs ]]; then
+    # shellcheck source=/dev/null
+    source ~/.config/user-dirs.dirs
+  fi
+  [[ -z $XDG_CONFIG_HOME ]] && XDG_CONFIG_HOME="$HOME/.config"
+}
+function load_config_file() {
+  [[ -z $SCRIPT_NAME ]] && set_script_name
+  [[ -z $CONFIG_FILE ]] && set_config_file
+
+  if [[ -r "$XDG_CONFIG_HOME/$CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$XDG_CONFIG_HOME/$CONFIG_FILE"
+  elif [[ -r "$XDG_CONFIG_HOME/$(get_dir_name)/$CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$XDG_CONFIG_HOME/$(get_dir_name)/$CONFIG_FILE"
+  elif [[ -r "$SCRIPT_DIR/$CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/$CONFIG_FILE"
+  fi
+}
+function get_mpv_version() {
+  mpv --version | head -n1 | awk '{ print $2 }'
+}
+function get_mpv_mpris_lib() {
+  local MPV_MPRIS_PATH
+
+  [[ -z $XDG_CONFIG_HOME ]] && load_xdg_defs
+
+  if [[ -r "$XDG_CONFIG_HOME/mpv/scripts/mpris.so" ]]; then
+    MPV_MPRIS_PATH="$XDG_CONFIG_HOME/mpv/scripts/mpris.so"
+  elif [[ -r /etc/mpv/scripts/mpris.so ]]; then
+    MPV_MPRIS_PATH=/etc/mpv/scripts/mpris.so
+  else
+    MPV_MPRIS_PATH=
+  fi
+  echo -n "$MPV_MPRIS_PATH"
+}
+function screen_lock() {
+  if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
+    log_err "\nError: You must have 'loginctl' installed to run this function.\n"
+    return 1
+  fi
+
+  if [[ $# -eq 0 ]]; then
+    local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    log_err "\nFound active session id: $CURRENT_SESS_ID\n"
+    [[ -n $CURRENT_SESS_ID ]] && loginctl lock-session $CURRENT_SESS_ID && log_err "\nDone\n" || log_err "\nFailed\n"
+    return $?
+  else
+    log_err "\nConnecting to $1... (you will have to enter your password twice)\n"
+    local REMOTE_SESS_ID ; REMOTE_SESS_ID=$(loginctl -H $1 user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
+    [[ -n $REMOTE_SESS_ID ]] && loginctl -H $1 lock-session $REMOTE_SESS_ID && log_err "\nDone\n" || log_err "\nFailed\n"
+    return $?
+  fi
+
+  return 1
+}
+function screen_unlock() {
+  if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
+    log_err "\nError: You must have 'loginctl' installed to run this function.\n"
+    return 1
+  fi
+
+  if [[ $# -eq 0 ]]; then
+    local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    log_err "\nFound locked session id: $CURRENT_SESS_ID\n"
+    [[ -n $CURRENT_SESS_ID ]] && loginctl unlock-session $CURRENT_SESS_ID && log_err "\nDone\n" || log_err "\nFailed\n"
+    return $?
+  else
+    log_err "\nConnecting to $1... (you will have to enter your password twice)\n"
+    local REMOTE_SESS_ID ; REMOTE_SESS_ID=$(loginctl -H $1 user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
+    [[ -n $REMOTE_SESS_ID ]] && loginctl -H $1 unlock-session $REMOTE_SESS_ID && log_err "\nDone\n" || log_err "\nFailed\n"
+    return $?
+  fi
+
+  return 1
+}
+function ssh_screen_lock() {
+  # Big thanks to Skyper from THC group for suggesting to fallback on 'ssh -M'
+  # to solve the issue where it was necessary to request user password twice
+  #
+  # Also thanks to Matthew from THC group for suggesting to reduce SSH backend checks
+
+  if [[ $# -eq 0 ]]; then
+    if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
+      log_err "\nError: You must have 'loginctl' installed to run this function.\n"
+      return 1
+    fi
+
+    local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    log_err "\nFound active session id: $CURRENT_SESS_ID\n"
+    [[ -n $CURRENT_SESS_ID ]] && loginctl lock-session $CURRENT_SESS_ID && log_err "\nLocked\n" || log_err "\nFailed\n"
+    return $?
+  else
+    if [[ -z $(command -v ssh 2>/dev/null) || -z $(command -v hpnssh 2>/dev/null) ]]; then
+      log_err "\nError: You must have 'ssh' or 'hpnssh' installed to run this function.\n"
+      return 1
+    fi
+
+    log_err "\nInitializing connection multiplexing to $1...\n"
+    local REMOTE_SESS_QUEUE
+    local REMOTE_SESS_ID
+    local SSH_BACKEND
+
+    if [[ -n $(command -v hpnssh 2>/dev/null) ]]; then
+      SSH_BACKEND=hpnssh
+    elif [[ -z $SSH_BACKEND && -n $(command -v ssh 2>/dev/null) ]]; then
+      SSH_BACKEND=ssh
+    else
+      log_err "\nCould not find proper ssh backend.\n"
+      return 1
+    fi
+
+    if [[ $SSH_BACKEND == "hpnssh" ]]; then
+      REMOTE_SESS_QUEUE=$(hpnssh -p22 -M -S "/tmp/hpnssh-%r@%h:%p" -fnNT $1 ; echo $$)
+      REMOTE_SESS_ID=$(hpnssh -p22 -S "/tmp/hpnssh-%r@%h:%p" $1 loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    else
+      REMOTE_SESS_QUEUE=$(ssh -M -S "/tmp/ssh-%r@%h:%p" -fnNT $1 ; echo $$)
+      REMOTE_SESS_ID=$(ssh -S "/tmp/ssh-%r@%h:%p" $1 loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    fi
+
+    log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
+    if [[ -n $REMOTE_SESS_QUEUE && -n $REMOTE_SESS_ID ]]; then
+      if [[ $SSH_BACKEND == "hpnssh" ]]; then
+        hpnssh -p22 -S "/tmp/hpnssh-%r@%h:%p" $1 loginctl lock-session $REMOTE_SESS_ID && log_err "\nLocked\n" || log_err "\nFailed\n"
+        hpnssh -p22 -O "exit" -S "/tmp/hpnssh-%r@%h:%p" $1 && log_err "\nConnection queue removed\n" || log_err "\nUnable to remove connection queue\n"
+        return $?
+      else
+        ssh -S "/tmp/ssh-%r@%h:%p" $1 loginctl lock-session $REMOTE_SESS_ID && log_err "\nLocked\n" || lor_err "\nFailed\n"
+        ssh -O "exit" -S "/tmp/ssh-%r@%h:%p" $1 && log_err "\nConnection queue removed\n" || log_err "\nUnable to remove connection queue\n"
+        return $?
+      fi
+    fi
+  fi
+
+  return 1
+}
+function ssh_screen_unlock() {
+  # Big thanks to Skyper from THC group for suggesting to fallback on 'ssh -M'
+  # to solve the issue where it was necessary to request user password twice
+  #
+  # Also thanks to Matthew from THC group for suggesting to reduce SSH backend checks
+
+  if [[ $# -eq 0 ]]; then
+    if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
+      log_err "\nError: You must have 'loginctl' installed to run this function.\n"
+      return 1
+    fi
+
+    local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    log_err "\nFound locked session id: $CURRENT_SESS_ID\n"
+    [[ -n $CURRENT_SESS_ID ]] && loginctl unlock-session $CURRENT_SESS_ID && log_err "\nUnlocked\n" || log_err "\nFailed\n"
+    return $?
+  else
+    if [[ -z $(command -v ssh 2>/dev/null) || -z $(command -v hpnssh 2>/dev/null) ]]; then
+      log_err "\nError: You must have 'ssh' or 'hpnssh' installed to run this function.\n"
+      return 1
+    fi
+
+    log_err "\nInitializing connection multiplexing to $1...\n"
+    local REMOTE_SESS_QUEUE
+    local REMOTE_SESS_ID
+    local SSH_BACKEND
+
+    if [[ -n $(command -v hpnssh 2>/dev/null) ]]; then
+      SSH_BACKEND=hpnssh
+    elif [[ -z $SSH_BACKEND && -n $(command -v ssh 2>/dev/null) ]]; then
+      SSH_BACKEND=ssh
+    else
+      log_err "\nCould not find proper ssh backend.\n"
+      return 1
+    fi
+
+    if [[ $SSH_BACKEND == "hpnssh" ]]; then
+      REMOTE_SESS_QUEUE=$(hpnssh -p22 -M -S "/tmp/hpnssh-%r@%h:%p" -fnNT $1 ; echo $$)
+      REMOTE_SESS_ID=$(hpnssh -p22 -S "/tmp/hpnssh-%r@%h:%p" $1 loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    else
+      REMOTE_SESS_QUEUE=$(ssh -M -S "/tmp/ssh-%r@%h:%p" -fnNT $1 ; echo $$)
+      REMOTE_SESS_ID=$(ssh -S "/tmp/ssh-%r@%h:%p" $1 loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
+    fi
+
+    log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
+    if [[ -n $REMOTE_SESS_QUEUE && -n $REMOTE_SESS_ID ]]; then
+      if [[ $SSH_BACKEND == "hpnssh" ]]; then
+        hpnssh -p22 -S "/tmp/hpnssh-%r@%h:%p" $1 loginctl unlock-session $REMOTE_SESS_ID && log_err "\nUnlocked\n" || log_err "\nFailed\n"
+        hpnssh -p22 -O "exit" -S "/tmp/hpnssh-%r@%h:%p" $1 && log_err "\nConnection queue removed\n" || log_err "\nUnable to remove connection queue\n"
+        return $?
+      else
+        ssh -S "/tmp/ssh-%r@%h:%p" $1 loginctl unlock-session $REMOTE_SESS_ID && log_err "\nUnlocked\n" || lor_err "\nFailed\n"
+        ssh -O "exit" -S "/tmp/ssh-%r@%h:%p" $1 && log_err "\nConnection queue removed\n" || log_err "\nUnable to remove connection queue\n"
+        return $?
+      fi
+    fi
+  fi
+
+  return 1
+}
+function find_leaks() {
+  local SEARCH_BACKEND
+  local DEFAULT_SEARCH
+
+  DEFAULT_SEARCH="api|api_id|api_hash|api_key|user|username|pass|password|creds|credential|token|oauth_token|key|client_api_key|server_api_key|site_key|secret_key|server_key|user_key|secret"
+
+  if [[ -n $(command -v rg 2>/dev/null) ]]; then
+    SEARCH_BACKEND=rg
+  elif [[ -z $SEARCH_BACKEND && -n $(command -v grep 2>/dev/null) ]]; then
+    SEARCH_BACKEND=grep
+  else
+    log_err "Could not find proper search backend."
+    return 1
+  fi
+
+  if [[ $# -eq 1 ]]; then
+    if [[ $SEARCH_BACKEND == "rg" ]]; then
+      rg --color always -j$(nproc) -nwie "$DEFAULT_SEARCH" --iglob "$1"
+    else
+      grep --color=always -nR -wiE "$DEFAULT_SEARCH" --include "$1"
+    fi
+    return $?
+  elif [[ $# -eq 2 ]]; then
+    if [[ $SEARCH_BACKEND == "rg" ]]; then
+      rg --color always -j$(nproc) -nwie "$DEFAULT_SEARCH" --iglob "$1" "$2"
+    else
+      grep --color=always -nR -wiE "$DEFAULT_SEARCH" --include "$1" "$2"
+    fi
+    return $?
+  else
+    log_err "Too many arguments."
+    return 1
+  fi
+}
