@@ -2,11 +2,17 @@
 #
 # This file must be sourced
 #
-# Collection of Bash functions to be included in any scripts
-#
+# Collection of Bash functions
 # Made by Jiab77
 #
-# Version 0.0.0
+# These Bash functions can be included in any scripts
+# or in your current Bash session that way:
+#
+# [[ -r /path/to/bash_funcs ]] && source /path/to/bash_funcs
+#
+# You can also the above line in your '~/.bashrc' file.
+#
+# Version 0.1.0
 
 # Colors
 RED="\033[1;31m"
@@ -32,14 +38,15 @@ function log_err() {
   echo -e "$1" >&2
 }
 function get_version() {
-  if [[ -n $(command -v awk 2>/dev/null) ]]; then
-    grep -m1 "# Version" $0 | awk '{ print $3 }'
+  # grep -m1 "# Version" $0 | awk '{ print $3 }'
+  if [[ -n ${BASH_SOURCE[0]} ]]; then
+    grep -m1 "# Version" ${BASH_SOURCE[0]} | cut -d" " -f3
   else
     grep -m1 "# Version" $0 | cut -d" " -f3
   fi
 }
 function show_version() {
-  echo -e "${NL}Version: $(get_version)${NL}" ; exit
+  echo -e "${NL}Version: $(get_version)${NL}"
 }
 function compare_version() {
   printf '%s\n' "$@" | sort -C -V
@@ -62,6 +69,9 @@ function set_env() {
     return 1
   fi
 }
+function show_env() {
+  get_env
+}
 function get_thermal_zones_count() {
   local TZ_COUNT
   TZ_COUNT=$(ls -1d /sys/class/thermal/thermal_zone* | wc -l)
@@ -82,16 +92,14 @@ function check_device_temp() {
 }
 function get_device_temp() {
   if [[ $(printenv | grep -ci android) -ne 0 && $(printenv | grep -ci termux) -ne 0 ]]; then
-    if [[ -n $(command -v termux-battery-status 2>/dev/null) ]]; then
+    if [[ -n $(command -v termux-battery-status 2>/dev/null) && -n $(command -v jq 2>/dev/null) ]]; then
       termux-battery-status | jq -rc .temperature | cut -d"." -f1
     fi
   else
-    for N in $(seq 0 1 $(get_thermal_zones_count)); do
-        echo -e "$(($(cat /sys/class/thermal/thermal_zone${N}/temp)/1000))"
-    done
+    for T in $(cat /sys/class/thermal/thermal_zone*/temp); do
+        echo $((T/1000))
+    done | sort -nr | head -n1
   fi
-
-  return 1
 }
 function show_device_temp() {
   for N in $(seq 0 1 $(get_thermal_zones_count)) ; do
@@ -100,24 +108,24 @@ function show_device_temp() {
     fi
   done
 }
+function watch_device_temp() {
+  watch -c -n1 'bash -c "source '${BASH_SOURCE[0]}' && show_device_temp"'
+}
 function get_hostname_from_session() {
   if [[ -n $SESSION_MANAGER ]]; then
     cut -d"/" -s -f2 <<< $SESSION_MANAGER | cut -d":" -f1
-    return $?
   fi
   return 1
 }
 function get_shell_id() {
   if [[ -n $PANTHEON_TERMINAL_ID ]]; then
     echo -n $PANTHEON_TERMINAL_ID
-    return $?
   fi
   return 1
 }
 function get_shell_level() {
   if [[ -n $SHLVL ]]; then
     echo -n $SHLVL
-    return $?
   fi
   return 1
 }
@@ -133,7 +141,6 @@ function get_user_desktop() {
   else
     return 1
   fi
-  return $?
 }
 function is_wayland() {
   [[ -n $XDG_SESSION_TYPE && $XDG_SESSION_TYPE == "wayland" ]] && return 0
@@ -147,11 +154,9 @@ function is_xorg() {
 }
 function is_root() {
   [[ $(id -u) -ne 0 ]] && return 1
-  return 0
 }
 function is_real_root() {
   [[ $(id -u) -ne 0 ]] && die "You must run this script as root or with '${YELLOW}sudo${RED}'."
-  return 0
 }
 function clean_str() {
   [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
@@ -246,7 +251,8 @@ function load_config_file() {
   fi
 }
 function get_mpv_version() {
-  mpv --version | head -n1 | awk '{ print $2 }'
+  # mpv --version | head -n1 | awk '{ print $2 }'
+  mpv --version | head -n1 | cut -d" " -f2
 }
 function get_mpv_mpris_lib() {
   local MPV_MPRIS_PATH
@@ -271,17 +277,15 @@ function screen_lock() {
   if [[ $# -eq 0 ]]; then
     local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
     log_err "\nFound active session id: $CURRENT_SESS_ID\n"
-    [[ -n $CURRENT_SESS_ID ]] && loginctl lock-session $CURRENT_SESS_ID && log_err "\nDone\n" || log_err "\nFailed\n"
-    return $?
+    [[ -n $CURRENT_SESS_ID ]] && loginctl lock-session $CURRENT_SESS_ID && log_err "\nLocked\n" || log_err "\nFailed\n"
   else
     log_err "\nConnecting to $1... (you will have to enter your password twice)\n"
     local REMOTE_SESS_ID ; REMOTE_SESS_ID=$(loginctl -H $1 user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
     log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
-    [[ -n $REMOTE_SESS_ID ]] && loginctl -H $1 lock-session $REMOTE_SESS_ID && log_err "\nDone\n" || log_err "\nFailed\n"
-    return $?
+    [[ -n $REMOTE_SESS_ID ]] && loginctl -H $1 lock-session $REMOTE_SESS_ID && log_err "\nLocked\n" || log_err "\nFailed\n"
   fi
 
-  return 1
+  return $?
 }
 function screen_unlock() {
   if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
@@ -292,19 +296,17 @@ function screen_unlock() {
   if [[ $# -eq 0 ]]; then
     local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
     log_err "\nFound locked session id: $CURRENT_SESS_ID\n"
-    [[ -n $CURRENT_SESS_ID ]] && loginctl unlock-session $CURRENT_SESS_ID && log_err "\nDone\n" || log_err "\nFailed\n"
-    return $?
+    [[ -n $CURRENT_SESS_ID ]] && loginctl unlock-session $CURRENT_SESS_ID && log_err "\nUnlocked\n" || log_err "\nFailed\n"
   else
     log_err "\nConnecting to $1... (you will have to enter your password twice)\n"
     local REMOTE_SESS_ID ; REMOTE_SESS_ID=$(loginctl -H $1 user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
     log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
-    [[ -n $REMOTE_SESS_ID ]] && loginctl -H $1 unlock-session $REMOTE_SESS_ID && log_err "\nDone\n" || log_err "\nFailed\n"
-    return $?
+    [[ -n $REMOTE_SESS_ID ]] && loginctl -H $1 unlock-session $REMOTE_SESS_ID && log_err "\nUnlocked\n" || log_err "\nFailed\n"
   fi
 
-  return 1
+  return $?
 }
-function ssh_screen_lock() {
+function screen_lock2() {
   # Big thanks to Skyper from THC group for suggesting to fallback on 'ssh -M'
   # to solve the issue where it was necessary to request user password twice
   #
@@ -364,7 +366,7 @@ function ssh_screen_lock() {
 
   return 1
 }
-function ssh_screen_unlock() {
+function screen_unlock2() {
   # Big thanks to Skyper from THC group for suggesting to fallback on 'ssh -M'
   # to solve the issue where it was necessary to request user password twice
   #
