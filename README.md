@@ -35,6 +35,24 @@ Edit your `~/.bashrc` file and add the following lines:
 
 Once done, you can call any included functions.
 
+## Arguments
+
+Even if this file __MUST__ be sourced to be used, it support the following arguments:
+
+```console
+$ bash /path/to/bash_funcs -h
+
+Usage: bash_funcs [flags] -- Collection of Bash functions
+
+Flags:
+  -h | --help		Print this message and exit
+  -l | --list		Print list of included functions and exit
+  -v | --version	Print file version and exit
+
+```
+
+> Note that there is a check included in the file that will be triggered if the 'exec' permission is being granted.
+
 ## Author
 
 * __Jiab77__
