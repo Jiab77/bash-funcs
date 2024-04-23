@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-#
-# This file must be sourced
+
+# This file must be sourced.
 #
 # Collection of Bash functions
 # Made by Jiab77
@@ -12,7 +12,7 @@
 #
 # You can also the above line in your '~/.bashrc' file.
 #
-# Version 0.1.0
+# Version 0.2.0
 
 # Colors
 RED="\033[1;31m"
@@ -38,12 +38,46 @@ function log_err() {
   echo -e "$1" >&2
 }
 function get_version() {
-  # grep -m1 "# Version" $0 | awk '{ print $3 }'
-  if [[ -n ${BASH_SOURCE[0]} ]]; then
-    grep -m1 "# Version" ${BASH_SOURCE[0]} | cut -d" " -f3
+  local FILE_PATH
+
+  [[ -n "${BASH_SOURCE[0]}" ]] && FILE_PATH="${BASH_SOURCE[0]}" || FILE_PATH="$0"
+
+  if [[ -n $(command -v awk 2>/dev/null) ]]; then
+    grep -m1 "# Version" "$FILE_PATH" | awk '{ print $3 }'
   else
-    grep -m1 "# Version" $0 | cut -d" " -f3
+    grep -m1 "# Version" "$FILE_PATH" | cut -d" " -f3
   fi
+}
+function show_self_header() {
+  echo -e "${NL}Collection of Bash functions"
+}
+function show_self_usage() {
+  echo -e "${NL}Usage: $(basename "$0") [flags] -- Collection of Bash functions"
+  echo -e "${NL}Flags:"
+  echo -e "  -h | --help${TAB}${TAB}Print this message and exit"
+  echo -e "  -l | --list${TAB}${TAB}Print list of included functions and exit"
+  echo -e "  -v | --version${TAB}Print file version and exit"
+  echo
+  exit
+}
+function show_self_functions() {
+  local FILE_PATH
+  local INDEX=0
+
+  [[ -n "${BASH_SOURCE[0]}" ]] && FILE_PATH="${BASH_SOURCE[0]}" || FILE_PATH="$0"
+
+  show_self_header
+  echo -e "${NL}Gathering functions from '$(realpath "$FILE_PATH")'...${NL}"
+  for F in $(grep -E 'function|\(\)' "$FILE_PATH" | grep -v "\$1" | tail -n+3 | sort | cut -d" " -f2); do
+    echo "$((++INDEX)). $F"
+  done
+  echo -e "${NL}Done.${NL}"
+  exit
+}
+function show_self_version() {
+  show_self_header
+  echo -e "${NL}Version: $(get_version)${NL}"
+  exit
 }
 function show_version() {
   echo -e "${NL}Version: $(get_version)${NL}"
@@ -87,7 +121,7 @@ function check_device_temp() {
   elif [[ $1 -ge 80 ]]; then
     echo -e "${RED}critical${NC}"
   else
-    echo -e "${BLUE}undefined${NC}"
+    echo -e "${PURPLE}undefined${NC}"
   fi
 }
 function get_device_temp() {
@@ -118,15 +152,11 @@ function get_hostname_from_session() {
   return 1
 }
 function get_shell_id() {
-  if [[ -n $PANTHEON_TERMINAL_ID ]]; then
-    echo -n $PANTHEON_TERMINAL_ID
-  fi
+  [[ -n $PANTHEON_TERMINAL_ID ]] && echo -n $PANTHEON_TERMINAL_ID
   return 1
 }
 function get_shell_level() {
-  if [[ -n $SHLVL ]]; then
-    echo -n $SHLVL
-  fi
+  [[ -n $SHLVL ]] && echo -n $SHLVL
   return 1
 }
 function get_user_desktop() {
@@ -155,7 +185,7 @@ function is_xorg() {
 function is_root() {
   [[ $(id -u) -ne 0 ]] && return 1
 }
-function is_real_root() {
+function is_root_or_die() {
   [[ $(id -u) -ne 0 ]] && die "You must run this script as root or with '${YELLOW}sudo${RED}'."
 }
 function clean_str() {
@@ -163,6 +193,7 @@ function clean_str() {
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR//\'/}"
+
   echo -n "$NEW_STR"
 }
 function str_replace() {
@@ -172,6 +203,7 @@ function str_replace() {
   local SEARCH ; SEARCH="$1"
   local REPLACE ; REPLACE="$2"
   local SUBJECT ; SUBJECT="$3"
+
   echo -n "${SUBJECT//$SEARCH/$REPLACE}"
 }
 function str_to_lower() {
@@ -179,6 +211,7 @@ function str_to_lower() {
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR,,}"
+
   echo -n "$NEW_STR"
 }
 function str_to_upper() {
@@ -186,6 +219,7 @@ function str_to_upper() {
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR^^}"
+
   echo -n "$NEW_STR"
 }
 function str_lower_to_cap() {
@@ -193,6 +227,7 @@ function str_lower_to_cap() {
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR,}"
+
   echo -n "$NEW_STR"
 }
 function str_upper_to_cap() {
@@ -200,6 +235,7 @@ function str_upper_to_cap() {
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR^}"
+
   echo -n "$NEW_STR"
 }
 function set_script_dir() {
@@ -214,6 +250,7 @@ function set_script_name() {
 }
 function get_dir_name() {
   [[ -z $SCRIPT_DIR ]] && SCRIPT_DIR="$(dirname "$0")"
+
   echo -n "$(basename "$SCRIPT_DIR")"
 }
 function get_script_name() {
@@ -233,6 +270,7 @@ function load_xdg_defs() {
     # shellcheck source=/dev/null
     source ~/.config/user-dirs.dirs
   fi
+
   [[ -z $XDG_CONFIG_HOME ]] && XDG_CONFIG_HOME="$HOME/.config"
 }
 function load_config_file() {
@@ -251,8 +289,11 @@ function load_config_file() {
   fi
 }
 function get_mpv_version() {
-  # mpv --version | head -n1 | awk '{ print $2 }'
-  mpv --version | head -n1 | cut -d" " -f2
+  if [[ -n $(command -v awk 2>/dev/null) ]]; then
+    mpv --version | head -n1 | awk '{ print $2 }'
+  else
+    mpv --version | head -n1 | cut -d" " -f2
+  fi
 }
 function get_mpv_mpris_lib() {
   local MPV_MPRIS_PATH
@@ -266,6 +307,7 @@ function get_mpv_mpris_lib() {
   else
     MPV_MPRIS_PATH=
   fi
+
   echo -n "$MPV_MPRIS_PATH"
 }
 function screen_lock() {
@@ -460,3 +502,11 @@ function find_leaks() {
     return 1
   fi
 }
+
+# Checks
+[[ -x "$0" ]] && die "This file is not intended to be executable. Please remove 'exec' permission."
+
+# Arguments (if called with 'bash' itself)
+[[ $1 == "-h" || $1 == "--help" ]] && show_self_usage
+[[ $1 == "-l" || $1 == "--list" ]] && show_self_functions
+[[ $1 == "-v" || $1 == "--version" ]] && show_self_version
