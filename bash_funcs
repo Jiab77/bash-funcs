@@ -12,7 +12,7 @@
 #
 # You can also the above line in your '~/.bashrc' file.
 #
-# Version 0.2.0
+# Version 0.2.1
 
 # Colors
 RED="\033[1;31m"
@@ -504,7 +504,7 @@ function find_leaks() {
 }
 
 # Checks
-[[ -x "$0" ]] && die "This file is not intended to be executable. Please remove 'exec' permission."
+[[ -n "${BASH_SOURCE[0]}" && -x "${BASH_SOURCE[0]}" ]] && die "This file is not intended to be executable. Please remove 'exec' permission."
 
 # Arguments (if called with 'bash' itself)
 [[ $1 == "-h" || $1 == "--help" ]] && show_self_usage
