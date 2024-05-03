@@ -12,7 +12,7 @@
 #
 # You can also the above line in your '~/.bashrc' file.
 #
-# Version 0.2.1
+# Version 0.2.2
 
 # Colors
 RED="\033[1;31m"
@@ -55,6 +55,7 @@ function show_self_usage() {
   echo -e "${NL}Usage: $(basename "$0") [flags] -- Collection of Bash functions"
   echo -e "${NL}Flags:"
   echo -e "  -h | --help${TAB}${TAB}Print this message and exit"
+  echo -e "  -c | --changelog${TAB}Show latest changes and exit"
   echo -e "  -l | --list${TAB}${TAB}Print list of included functions and exit"
   echo -e "  -v | --version${TAB}Print file version and exit"
   echo
@@ -73,6 +74,17 @@ function show_self_functions() {
   done
   echo -e "${NL}Done.${NL}"
   exit
+}
+function get_self_changes() {
+  local FILE_PATH
+
+  [[ -n "${BASH_SOURCE[0]}" ]] && FILE_PATH="${BASH_SOURCE[0]}" || FILE_PATH="$0"
+
+  if [[ -d "$FILE_PATH/.git" && -n $(command -v git 2>/dev/null) ]]; then
+    git log
+  else
+    die "You must be in the project folder and must have 'git' installed to run this function.${NL}"
+  fi
 }
 function show_self_version() {
   show_self_header
@@ -143,7 +155,7 @@ function show_device_temp() {
   done
 }
 function watch_device_temp() {
-  watch -c -n1 'bash -c "source '${BASH_SOURCE[0]}' && show_device_temp"'
+  watch -c -n1 'bash -c "source '${BASH_SOURCE[0]}' ; show_device_temp"'
 }
 function get_hostname_from_session() {
   if [[ -n $SESSION_MANAGER ]]; then
@@ -365,7 +377,7 @@ function screen_lock2() {
     [[ -n $CURRENT_SESS_ID ]] && loginctl lock-session $CURRENT_SESS_ID && log_err "\nLocked\n" || log_err "\nFailed\n"
     return $?
   else
-    if [[ -z $(command -v ssh 2>/dev/null) || -z $(command -v hpnssh 2>/dev/null) ]]; then
+    if [[ -z $(command -v ssh 2>/dev/null) && -z $(command -v hpnssh 2>/dev/null) ]]; then
       log_err "\nError: You must have 'ssh' or 'hpnssh' installed to run this function.\n"
       return 1
     fi
@@ -425,7 +437,7 @@ function screen_unlock2() {
     [[ -n $CURRENT_SESS_ID ]] && loginctl unlock-session $CURRENT_SESS_ID && log_err "\nUnlocked\n" || log_err "\nFailed\n"
     return $?
   else
-    if [[ -z $(command -v ssh 2>/dev/null) || -z $(command -v hpnssh 2>/dev/null) ]]; then
+    if [[ -z $(command -v ssh 2>/dev/null) && -z $(command -v hpnssh 2>/dev/null) ]]; then
       log_err "\nError: You must have 'ssh' or 'hpnssh' installed to run this function.\n"
       return 1
     fi
