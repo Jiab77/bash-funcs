@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-
+#
 # This file must be sourced.
 #
 # Collection of Bash functions
@@ -13,7 +13,15 @@
 #
 # You can also the above line in your '~/.bashrc' file.
 #
-# Version 0.2.3
+# Some methods have been renamed starting from v0.3.0:
+#
+# log_err -> err_log
+# get_version -> get_self_version
+# is_root_or_die -> be_root_or_die
+#
+# error messages color have been changed too.
+#
+# Version 0.4.0
 
 # Colors
 RED="\033[1;31m"
@@ -28,15 +36,22 @@ NL="\n"
 TAB="\t"
 
 # Functions
+function bye() {
+  # TODO: Finish this method.
+  echo -e "${NL}Bye.${NL}"
+}
 function die() {
-  echo -e "${NL}${WHITE}[ERROR] ${RED}$*${NC}${NL}" >&2
-  exit 255
+  echo -e "${NL}${RED}[ERROR] ${YELLOW}$*${NC}${NL}" >&2
+  return 255
+}
+function err() {
+  echo -e "${NL}${RED}[ERROR] ${YELLOW}$*${NC}${NL}" >&2
+}
+function err_log() {
+  echo -e "${NL}$*${NC}${NL}" >&2
 }
 function log() {
-  echo -e "$1"
-}
-function log_err() {
-  echo -e "$1" >&2
+  echo -e "${NL}$*${NC}${NL}"
 }
 function get_self_path() {
   local FILE_PATH
@@ -49,7 +64,7 @@ function get_self_path() {
     die "Could not get self path."
   fi
 }
-function get_version() {
+function get_self_version() {
   local FILE_PATH ; FILE_PATH="$(get_self_path)"
 
   if [[ -n $(command -v awk 2>/dev/null) ]]; then
@@ -62,14 +77,17 @@ function show_self_header() {
   echo -e "${NL}Collection of Bash functions"
 }
 function show_self_usage() {
-  echo -e "${NL}Usage: $(basename "$0") [flags] -- Collection of Bash functions"
+  local FILE_PATH ; FILE_PATH="$(get_self_path)"
+
+  echo -e "${NL}Usage: $(basename "$FILE_PATH") [flags] -- Collection of Bash functions"
   echo -e "${NL}Flags:"
   echo -e "  -h | --help${TAB}${TAB}Print this message and exit"
   echo -e "  -c | --changelog${TAB}Print latest changes and exit"
   echo -e "  -l | --list${TAB}${TAB}Print list of included functions and exit"
   echo -e "  -v | --version${TAB}Print file version and exit"
+  echo -e "  -i | --install${TAB}Self install in '.bashrc' and exit"
   echo
-  exit
+  return
 }
 function show_self_functions() {
   local FILE_PATH ; FILE_PATH="$(get_self_path)"
@@ -81,7 +99,7 @@ function show_self_functions() {
     echo "$((++INDEX)). $F"
   done
   echo -e "${NL}Done.${NL}"
-  exit
+  return
 }
 function show_self_changes() {
   local FILE_PATH ; FILE_PATH="$(get_self_path)"
@@ -96,11 +114,104 @@ function show_self_changes() {
 }
 function show_self_version() {
   show_self_header
-  echo -e "${NL}Version: $(get_version)${NL}"
-  exit
+  echo -e "${NL}Version: $(get_self_version)${NL}"
+  return
+}
+function show_self_loading() {
+  local FILE_PATH ; FILE_PATH="$(get_self_path)"
+
+  echo -e "${NL}Loaded '$(basename "$FILE_PATH")' file"
+  echo -e " - From: $(dirname "$(realpath "$FILE_PATH")")"
+  echo -e " - Version: $(get_self_version)${NL}"
+}
+function self_install() {
+  local BASHRC_PATH="$HOME/.bashrc"
+  local FILE_PATH ; FILE_PATH="$(get_self_path)"
+
+  echo -ne "${NL}${WHITE}Initializing '${PURPLE}self_install${WHITE}'..."
+  if [[ $(grep -c "$FILE_PATH" "$BASHRC_PATH") -eq 0 ]]; then
+    {
+      echo -e "\n# Load 'bash_funcs' function file"
+      echo "[[ -r $(realpath "$FILE_PATH") ]] && source $(realpath "$FILE_PATH")"
+      echo "[[ -n show_self_loading ]] && show_self_loading 2>/dev/null"
+    } >> "$BASHRC_PATH"
+    if [[ $(grep -c "$(realpath "$FILE_PATH")" "$BASHRC_PATH") -eq 1 ]]; then
+      echo -e " ${GREEN}done${NC}${NL}"
+    else
+      echo -e " ${RED}failed${NC}${NL}"
+      return 1
+    fi
+  else
+    echo ; die "Already installed."
+  fi
+}
+function show_diff() {
+  local BIN_DIFF ; BIN_DIFF=$(command -v diff 2>/dev/null)
+  local COLS ; COLS=$(tput cols)
+  local SCREEN_SIZE=$((COLS-10))
+
+  # Flags
+  if [[ $# -eq 0 ||  $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: show_diff [flags] <old file> <new file> - Show differences between two files${NL}"
+    return
+  fi
+
+  # Checks
+  [[ -z $BIN_DIFF ]] && die "You must have 'diff' installed to run this script."
+
+  # Args
+  local OLD_FILE="$1"
+  local NEW_FILE="$2"
+
+  # Main
+  diff -s -y -W $SCREEN_SIZE --suppress-common-lines --color "$OLD_FILE" "$NEW_FILE"
+}
+function show_errors() {
+  # Config
+  local MAX_OUTPUT_LINES=2000
+
+  # Internals
+  local BIN_JCTL ; BIN_JCTL=$(command -v journalctl 2>/dev/null)
+
+  # Flags
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $(basename "$0") [flags] -- Show system logs using 'journalctl' from systemd."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ -z $BIN_JCTL ]] && die "You must have 'journalctl' installed to run this script."
+
+  # Main
+  journalctl -fn "$MAX_OUTPUT_LINES" -p4
+}
+function show_logs() {
+  # Config
+  local MAX_OUTPUT_LINES=2000
+
+  # Internals
+  local BIN_JCTL ; BIN_JCTL=$(command -v journalctl 2>/dev/null)
+
+  # Flags
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $(basename "$0") [flags] -- Show system logs using 'journalctl' from systemd."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ -z $BIN_JCTL ]] && die "You must have 'journalctl' installed to run this script."
+
+  # Main
+  journalctl -fn "$MAX_OUTPUT_LINES" -b
 }
 function show_version() {
-  echo -e "${NL}Version: $(get_version)${NL}"
+  echo -e "${NL}Version: $(get_self_version)${NL}"
 }
 function compare_version() {
   printf '%s\n' "$@" | sort -C -V
@@ -123,9 +234,6 @@ function set_env() {
   else
     return 1
   fi
-}
-function show_env() {
-  get_env
 }
 # shellcheck disable=SC2012
 function get_thermal_zones_count() {
@@ -150,7 +258,7 @@ function check_device_temp() {
 function get_device_temp() {
   if [[ $(printenv | grep -ci android) -ne 0 && $(printenv | grep -ci termux) -ne 0 ]]; then
     if [[ -n $(command -v termux-battery-status 2>/dev/null) && -n $(command -v jq 2>/dev/null) ]]; then
-      termux-battery-status | jq -rc .temperature | cut -d"." -f1
+      termux-battery-status 2>/dev/null | jq -rc .temperature | cut -d"." -f1
     fi
   else
     for T in $(cat /sys/class/thermal/thermal_zone*/temp); do
@@ -167,6 +275,9 @@ function show_device_temp() {
 }
 function watch_device_temp() {
   watch -c -n1 'bash -c "source '"${BASH_SOURCE[0]}"' ; show_device_temp"'
+}
+function watch_tcp_congestion() {
+  watch -c -n1 'ss -tin | grep -iE "bbr|cubic" --color=always'
 }
 function get_hostname_from_session() {
   if [[ -n $SESSION_MANAGER ]]; then
@@ -208,7 +319,7 @@ function is_xorg() {
 function is_root() {
   [[ $(id -u) -ne 0 ]] && return 1
 }
-function is_root_or_die() {
+function be_root_or_die() {
   [[ $(id -u) -ne 0 ]] && die "You must run this script as root or with '${YELLOW}sudo${RED}'."
 }
 function clean_str() {
@@ -335,46 +446,6 @@ function get_mpv_mpris_lib() {
 }
 # shellcheck disable=SC2015
 function screen_lock() {
-  if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
-    log_err "\nError: You must have 'loginctl' installed to run this function.\n"
-    return 1
-  fi
-
-  if [[ $# -eq 0 ]]; then
-    local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
-    log_err "\nFound active session id: $CURRENT_SESS_ID\n"
-    [[ -n $CURRENT_SESS_ID ]] && loginctl lock-session "$CURRENT_SESS_ID" && log_err "\nLocked\n" || log_err "\nFailed\n"
-  else
-    log_err "\nConnecting to $1... (you will have to enter your password twice)\n"
-    local REMOTE_SESS_ID ; REMOTE_SESS_ID=$(loginctl -H "$1" user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
-    log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
-    [[ -n $REMOTE_SESS_ID ]] && loginctl -H "$1" lock-session "$REMOTE_SESS_ID" && log_err "\nLocked\n" || log_err "\nFailed\n"
-  fi
-
-  return $?
-}
-# shellcheck disable=SC2015
-function screen_unlock() {
-  if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
-    log_err "\nError: You must have 'loginctl' installed to run this function.\n"
-    return 1
-  fi
-
-  if [[ $# -eq 0 ]]; then
-    local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
-    log_err "\nFound locked session id: $CURRENT_SESS_ID\n"
-    [[ -n $CURRENT_SESS_ID ]] && loginctl unlock-session "$CURRENT_SESS_ID" && log_err "\nUnlocked\n" || log_err "\nFailed\n"
-  else
-    log_err "\nConnecting to $1... (you will have to enter your password twice)\n"
-    local REMOTE_SESS_ID ; REMOTE_SESS_ID=$(loginctl -H "$1" user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
-    log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
-    [[ -n $REMOTE_SESS_ID ]] && loginctl -H "$1" unlock-session "$REMOTE_SESS_ID" && log_err "\nUnlocked\n" || log_err "\nFailed\n"
-  fi
-
-  return $?
-}
-# shellcheck disable=SC2015
-function screen_lock2() {
   # Big thanks to Skyper from THC group for suggesting to fallback on 'ssh -M'
   # to solve the issue where it was necessary to request user password twice
   #
@@ -382,21 +453,19 @@ function screen_lock2() {
 
   if [[ $# -eq 0 ]]; then
     if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
-      log_err "\nError: You must have 'loginctl' installed to run this function.\n"
-      return 1
+      die "You must have 'loginctl' installed to run this function."
     fi
 
     local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
-    log_err "\nFound active session id: $CURRENT_SESS_ID\n"
-    [[ -n $CURRENT_SESS_ID ]] && loginctl lock-session "$CURRENT_SESS_ID" && log_err "\nLocked\n" || log_err "\nFailed\n"
+    err_log "Found active session id: $CURRENT_SESS_ID"
+    [[ -n $CURRENT_SESS_ID ]] && loginctl lock-session "$CURRENT_SESS_ID" && err_log "Locked." || err_log "Failed."
     return $?
   else
     if [[ -z $(command -v ssh 2>/dev/null) && -z $(command -v hpnssh 2>/dev/null) ]]; then
-      log_err "\nError: You must have 'ssh' or 'hpnssh' installed to run this function.\n"
-      return 1
+      die "You must have 'ssh' or 'hpnssh' installed to run this function."
     fi
 
-    log_err "\nInitializing connection multiplexing to $1...\n"
+    err_log "Initializing connection multiplexing to $1..."
     local REMOTE_SESS_QUEUE
     local REMOTE_SESS_ID
     local SSH_BACKEND
@@ -406,8 +475,7 @@ function screen_lock2() {
     elif [[ -z $SSH_BACKEND && -n $(command -v ssh 2>/dev/null) ]]; then
       SSH_BACKEND=ssh
     else
-      log_err "\nCould not find proper ssh backend.\n"
-      return 1
+      die "Could not find proper ssh backend."
     fi
 
     if [[ $SSH_BACKEND == "hpnssh" ]]; then
@@ -418,15 +486,15 @@ function screen_lock2() {
       REMOTE_SESS_ID=$(ssh -S "/tmp/ssh-%r@%h:%p" "$1" loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
     fi
 
-    log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
+    err_log "Found remote session id: $REMOTE_SESS_ID"
     if [[ -n $REMOTE_SESS_QUEUE && -n $REMOTE_SESS_ID ]]; then
       if [[ $SSH_BACKEND == "hpnssh" ]]; then
-        hpnssh -p22 -S "/tmp/hpnssh-%r@%h:%p" "$1" loginctl lock-session "$REMOTE_SESS_ID" && log_err "\nLocked\n" || log_err "\nFailed\n"
-        hpnssh -p22 -O "exit" -S "/tmp/hpnssh-%r@%h:%p" "$1" && log_err "\nConnection queue removed\n" || log_err "\nUnable to remove connection queue\n"
+        hpnssh -p22 -S "/tmp/hpnssh-%r@%h:%p" "$1" loginctl lock-session "$REMOTE_SESS_ID" && err_log "Locked." || err_log "Failed."
+        hpnssh -p22 -O "exit" -S "/tmp/hpnssh-%r@%h:%p" "$1" && err_log "Connection queue removed." || err_log "Unable to remove connection queue."
         return $?
       else
-        ssh -S "/tmp/ssh-%r@%h:%p" "$1" loginctl lock-session "$REMOTE_SESS_ID" && log_err "\nLocked\n" || lor_err "\nFailed\n"
-        ssh -O "exit" -S "/tmp/ssh-%r@%h:%p" "$1" && log_err "\nConnection queue removed\n" || log_err "\nUnable to remove connection queue\n"
+        ssh -S "/tmp/ssh-%r@%h:%p" "$1" loginctl lock-session "$REMOTE_SESS_ID" && err_log "Locked" || err_log "Failed"
+        ssh -O "exit" -S "/tmp/ssh-%r@%h:%p" "$1" && err_log "Connection queue removed." || err_log "Unable to remove connection queue."
         return $?
       fi
     fi
@@ -435,7 +503,7 @@ function screen_lock2() {
   return 1
 }
 # shellcheck disable=SC2015
-function screen_unlock2() {
+function screen_unlock() {
   # Big thanks to Skyper from THC group for suggesting to fallback on 'ssh -M'
   # to solve the issue where it was necessary to request user password twice
   #
@@ -443,21 +511,19 @@ function screen_unlock2() {
 
   if [[ $# -eq 0 ]]; then
     if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
-      log_err "\nError: You must have 'loginctl' installed to run this function.\n"
-      return 1
+      die "You must have 'loginctl' installed to run this function."
     fi
 
     local CURRENT_SESS_ID ; CURRENT_SESS_ID=$(loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
-    log_err "\nFound locked session id: $CURRENT_SESS_ID\n"
-    [[ -n $CURRENT_SESS_ID ]] && loginctl unlock-session "$CURRENT_SESS_ID" && log_err "\nUnlocked\n" || log_err "\nFailed\n"
+    err_log "Found locked session id: $CURRENT_SESS_ID"
+    [[ -n $CURRENT_SESS_ID ]] && loginctl unlock-session "$CURRENT_SESS_ID" && err_log "Unlocked." || err_log "Failed."
     return $?
   else
     if [[ -z $(command -v ssh 2>/dev/null) && -z $(command -v hpnssh 2>/dev/null) ]]; then
-      log_err "\nError: You must have 'ssh' or 'hpnssh' installed to run this function.\n"
-      return 1
+      die "You must have 'ssh' or 'hpnssh' installed to run this function."
     fi
 
-    log_err "\nInitializing connection multiplexing to $1...\n"
+    err_log "Initializing connection multiplexing to $1..."
     local REMOTE_SESS_QUEUE
     local REMOTE_SESS_ID
     local SSH_BACKEND
@@ -467,8 +533,7 @@ function screen_unlock2() {
     elif [[ -z $SSH_BACKEND && -n $(command -v ssh 2>/dev/null) ]]; then
       SSH_BACKEND=ssh
     else
-      log_err "\nCould not find proper ssh backend.\n"
-      return 1
+      die "Could not find proper ssh backend."
     fi
 
     if [[ $SSH_BACKEND == "hpnssh" ]]; then
@@ -479,15 +544,15 @@ function screen_unlock2() {
       REMOTE_SESS_ID=$(ssh -S "/tmp/ssh-%r@%h:%p" "$1" loginctl user-status | grep -m1 Session | cut -d"*" -f2 | cut -d" " -f1)
     fi
 
-    log_err "\nFound remote session id: $REMOTE_SESS_ID\n"
+    err_log "Found remote session id: $REMOTE_SESS_ID"
     if [[ -n $REMOTE_SESS_QUEUE && -n $REMOTE_SESS_ID ]]; then
       if [[ $SSH_BACKEND == "hpnssh" ]]; then
-        hpnssh -p22 -S "/tmp/hpnssh-%r@%h:%p" "$1" loginctl unlock-session "$REMOTE_SESS_ID" && log_err "\nUnlocked\n" || log_err "\nFailed\n"
-        hpnssh -p22 -O "exit" -S "/tmp/hpnssh-%r@%h:%p" "$1" && log_err "\nConnection queue removed\n" || log_err "\nUnable to remove connection queue\n"
+        hpnssh -p22 -S "/tmp/hpnssh-%r@%h:%p" "$1" loginctl unlock-session "$REMOTE_SESS_ID" && err_log "Unlocked." || err_log "Failed."
+        hpnssh -p22 -O "exit" -S "/tmp/hpnssh-%r@%h:%p" "$1" && err_log "Connection queue removed." || err_log "Unable to remove connection queue."
         return $?
       else
-        ssh -S "/tmp/ssh-%r@%h:%p" "$1" loginctl unlock-session "$REMOTE_SESS_ID" && log_err "\nUnlocked\n" || lor_err "\nFailed\n"
-        ssh -O "exit" -S "/tmp/ssh-%r@%h:%p" "$1" && log_err "\nConnection queue removed\n" || log_err "\nUnable to remove connection queue\n"
+        ssh -S "/tmp/ssh-%r@%h:%p" "$1" loginctl unlock-session "$REMOTE_SESS_ID" && err_log "Unlocked." || err_log "Failed."
+        ssh -O "exit" -S "/tmp/ssh-%r@%h:%p" "$1" && err_log "Connection queue removed." || err_log "Unable to remove connection queue."
         return $?
       fi
     fi
@@ -501,15 +566,24 @@ function find_leaks() {
 
   DEFAULT_SEARCH="api|api_id|api_hash|api_key|user|username|pass|password|creds|credential|token|oauth_token|key|client_api_key|server_api_key|site_key|secret_key|server_key|user_key|secret"
 
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: find_leaks [flags] <folder> -- Find leaks in given folder."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Main
   if [[ -n $(command -v rg 2>/dev/null) ]]; then
     SEARCH_BACKEND="rg"
   elif [[ -z $SEARCH_BACKEND && -n $(command -v grep 2>/dev/null) ]]; then
     SEARCH_BACKEND="grep"
   else
-    log_err "Could not find proper search backend."
+    err_log "Could not find proper search backend."
     return 1
   fi
-
   if [[ $# -eq 1 ]]; then
     if [[ $SEARCH_BACKEND == "rg" ]]; then
       rg --color always -j"$(nproc)" -nwie "$DEFAULT_SEARCH" --iglob "$1"
@@ -525,10 +599,920 @@ function find_leaks() {
     fi
     return $?
   else
-    log_err "Too many arguments."
+    err_log "Too many arguments."
     return 1
   fi
 }
+function hex_decode() {
+  # Config
+  local INPUT_STRING
+  local OUTPUT_STRING
+
+  # Flags
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $(basename "$0") [flags] <input> -- Decode hex encoded string / file."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Init
+  INPUT_STRING="$1"
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing input string or file."
+  [[ -z $INPUT_STRING ]] && die "Empty input string or file."
+
+  # Main
+  if [[ -r "$INPUT_STRING" ]]; then
+    OUTPUT_STRING="$(echo -ne $(cat "$INPUT_STRING"))"
+  else
+    OUTPUT_STRING="$(echo -ne "$INPUT_STRING")"
+  fi
+  if [[ -z $OUTPUT_STRING ]]; then
+    die "Could not decode input string or file."
+  else
+    echo -e "$OUTPUT_STRING"
+  fi
+}
+function base64_decode() {
+  # Config
+  local INPUT_STRING
+  local OUTPUT_STRING
+
+  # Flags
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $(basename "$0") [flags] <input> -- Decode base64 encoded string / file."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Init
+  INPUT_STRING="$1"
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing input string or file."
+  [[ -z $INPUT_STRING ]] && die "Empty input string or file."
+
+  # Main
+  if [[ -r "$INPUT_STRING" ]]; then
+    OUTPUT_STRING="$(cat "$INPUT_STRING" | base64 -d -)"
+  else
+    OUTPUT_STRING="$(echo -ne "$INPUT_STRING" | base64 -d -)"
+  fi
+  if [[ -z $OUTPUT_STRING ]]; then
+    die "Could not decode input string or file."
+  else
+    echo -e "$OUTPUT_STRING"
+  fi
+}
+function deobfuscate() {
+  # Config
+  local INPUT_STRING
+  local OUTPUT_STRING
+
+  # Flags
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: deobfuscate [flags] <input> -- Decode obfuscated string / file."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Init
+  INPUT_STRING="$1"
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing input string or file."
+  [[ -z $INPUT_STRING ]] && die "Empty input string or file."
+
+  # Main
+  OUTPUT_STRING_B64="$(base64_decode "$INPUT_STRING")"
+  [[ -z $OUTPUT_STRING_B64 ]] && die "Could not decode input string or file."
+  OUTPUT_STRING_HEX="$(hex_decode "$OUTPUT_STRING_B64")"
+  [[ -z $OUTPUT_STRING_HEX ]] && die "Could not process input string or file."
+  echo -e "$OUTPUT_STRING_HEX"
+}
+function sf_proxy() {
+  # Thanks to the Segfault project created by the THC group
+  local USER_SECRET
+  local PROXY_ADDR="127.0.0.1:1080"
+  local SERVER_ADDR="root@segfault.net"
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: sf_proxy [flags] [secret] -- Create web proxy using the SegFault project."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Check for user secret value
+  [[ -n $1 ]] && USER_SECRET="$1"
+
+  # Main
+  if [[ -n $USER_SECRET ]]; then
+    echo -e "${NL}Connecting... [Using given secret value]${NL}"
+    ssh -o "SetEnv SECRET=$USER_SECRET" -D "$PROXY_ADDR" "$SERVER_ADDR"
+  else
+    echo -e "${NL}Connecting... [Password is: segfault]${NL}"
+    ssh -D "$PROXY_ADDR" "$SERVER_ADDR"
+  fi
+}
+function sf_download() {
+  # Internals
+  local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: sf_download [flags] <url> -- Download given URL withing SegFault web proxy."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing input URL."
+  [[ -z $BIN_CURL ]] && die "Please, install 'curl' and try again."
+
+  # Main
+  if [[ $(ss -tunl | grep -c 1080) -ne 0 ]]; then
+    curl -fsSL -x socks5h://0 $@
+  else
+    die "Please run the 'sf_proxy' command in another terminal and try again."
+  fi
+}
+function sf_ip() {
+  # Internals
+  local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: sf_ip [flags] <url> -- Get IP address from SegFault web proxy."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ -z $BIN_CURL ]] && die "Please, install 'curl' and try again."
+
+  # Main
+  if [[ $(ss -tunl | grep -c 1080) -ne 0 ]]; then
+    if [[ -n $(command -v jq 2>/dev/null) ]]; then
+      curl -sSL -x socks5h://0 ipinfo.io | jq .
+    else
+      curl -sSL -x socks5h://0 ipinfo.io ; echo
+    fi
+  else
+    die "Please run the 'sf_proxy' command in another terminal and try again."
+  fi
+}
+function get_ip() {
+  # Internals
+  local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: get_ip [flags] <url> -- Get IP address with the IPInfo service."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ -z $BIN_CURL ]] && die "Please, install 'curl' and try again."
+
+  # Main
+  if [[ -n $(command -v jq 2>/dev/null) ]]; then
+    curl -sSL ipinfo.io | jq .
+  else
+    curl -sSL ipinfo.io ; echo
+  fi
+}
+function my_ip() {
+  # Show device ip address using several tricks
+  # from the THC hacking group
+
+  # Config
+  local local_ip
+  local external_ip
+  local json_data
+
+  # Internals
+  local BIN_JQ ; BIN_JQ=$(command -v jq 2>/dev/null)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: my_ip [flags] <url> -- Show device IP addresses."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo -e "  -j | --json${TAB}Return data in JSON format"
+    echo
+    return
+  fi
+
+  # Main
+  local_ip="$(ip -br a | grep -i "up" | awk '{ print $3 }')"
+  if [[ -n $(which dig 2>/dev/null) ]]; then
+    external_ip="$(dig +short myip.opendns.com @resolver1.opendns.com)"
+  elif [[ -n $(which host 2>/dev/null) ]]; then
+    external_ip="$(host myip.opendns.com resolver1.opendns.com)"
+  elif [[ -n $(which curl 2>/dev/null) ]]; then
+    #external_ip="$(curl -sSL ifconfig.io/ip)"
+    external_ip="$(curl -sSL ifconfig.me)"
+  else
+    external_ip="$(hostname -i | cut -d' ' -f3)"
+  fi
+  if [[ $1 == "-j" || $1 == "--json" ]]; then
+    json_data='{ "local":"'$local_ip'", "external":"'$external_ip'" }'
+
+    [[ -n $BIN_JQ ]] && echo "$json_data" | jq . || echo "$json_data"
+  else
+    echo "My Local IP address: ${local_ip}"
+    echo "My WAN/Public IP address: ${external_ip}"
+  fi
+}
+function bench() {
+  # Config
+  local BENCH_URL="bench.sh"
+
+  # Internals
+  local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
+  local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: bench [flags] -- Benchmark device using the 'bench.sh' service."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Main
+  if [[ -n $BIN_CURL ]]; then
+    curl -Lso- "$BENCH_URL" | bash
+  elif [[ -n $BIN_WGET ]]; then
+    wget -qO- "$BENCH_URL" | bash
+  else
+    die "Please install 'curl' or 'wget' and try again."
+  fi
+}
+function updater() {
+  # Config
+  local UPDATER_URL="https://raw.githubusercontent.com/Jiab77/updater/main/updater.sh"
+  local UPDATER_PATH="/dev/shm/updater.sh"
+
+  # Internals
+  local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
+  local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
+
+  # Get script from repo
+  if [[ -n $BIN_CURL ]]; then
+    curl -sSL "$UPDATER_URL" > "$UPDATER_PATH"
+  elif [[ -n $BIN_WGET ]]; then
+    wget -qO "$UPDATER_URL" > "$UPDATER_PATH"
+  else
+    die "Please install 'curl' or 'wget' and try again."
+  fi
+
+  # Set exec permission
+  chmod +x "$UPDATER_PATH"
+
+  # Main
+  if [[ $(id -u) -eq 0 ]]; then
+    "$UPDATER_PATH" $@
+  else
+    sudo "$UPDATER_PATH" $@
+  fi
+
+  # Clean
+  [[ -f "$UPDATER_PATH" ]] && rm -f "$UPDATER_PATH"
+}
+function exfil() {
+  # Config
+  local EXFIL_URL="https://raw.githubusercontent.com/Jiab77/exfil/main/exfil.sh"
+  local EXFIL_PATH="/dev/shm/exfil.sh"
+
+  # Internals
+  local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
+  local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
+
+  # Get script from repo
+  if [[ -n $BIN_CURL ]]; then
+    curl -sSL "$EXFIL_URL" > "$EXFIL_PATH"
+  elif [[ -n $BIN_WGET ]]; then
+    wget -qO "$EXFIL_URL" > "$EXFIL_PATH"
+  else
+    die "Please install 'curl' or 'wget' and try again."
+  fi
+
+  # Set exec permission
+  chmod +x "$EXFIL_PATH"
+
+  # Main
+  "$EXFIL_PATH" $@
+
+  # Clean
+  [[ -f "$EXFIL_PATH" ]] && rm -f "$EXFIL_PATH"
+}
+function download() {
+  # Internals
+  local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: download [flags] <url> -- Download given URL."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing input URL."
+  [[ -z $BIN_CURL ]] && die "Please, install 'curl' and try again."
+
+  # Main
+  curl -fsSL $@
+}
+function get_apt_pkg_status() {
+  local PKG_STATUS
+  PKG_STATUS=$(apt-cache policy "$1" | grep -viE 'aucun|none' | grep -i 'install' | cut -d ':' -f1)
+  [[ -n $PKG_STATUS ]] && echo -ne " ${WHITE}[ ${YELLOW}${PKG_STATUS// /}${WHITE}]${NC}"
+}
+function pkg_search() {
+  # Config
+  local DEBUG_MODE=true
+  local ENABLE_FLATPAK=false
+  local FLATPAK_CHANNEL=flathub
+
+  # Internals
+  local BIN_APT ; BIN_APT=$(command -v apt 2>/dev/null)
+  local BIN_PARU ; BIN_PARU=$(command -v paru 2>/dev/null)
+  local BIN_PACMAN ; BIN_PACMAN=$(command -v pacman 2>/dev/null)
+  local BIN_FLATPAK ; BIN_FLATPAK=$(command -v flatpak 2>/dev/null)
+  local SHOW_INFO=false
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: pkg_search [flags] <package> -- Search packages on any Linux distribs."
+    echo -e "${NL}Flags:${NL}  -h | --help    - Show help and exit${NL}  -i | --info    - Show package details"
+    echo -e "  -f | --flatpak    - Use flatpak backend"
+    echo
+    return
+  fi
+
+  # Args
+  [[ $1 == "-f" || $1 == "--flatpak" ]] && ENABLE_FLATPAK=true && shift
+  [[ $1 == "-i" || $1 == "--info" ]] && SHOW_INFO=true && shift
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing package name."
+
+  # Init
+  local PKG_NAME=$@
+
+  # Main
+  [[ -r /etc/os-release ]] && source /etc/os-release || die "Could not read '/etc/os-release' file."
+  [[ -z $ID ]] && die "Could not detect operating system."
+  [[ -z $ID_LIKE ]] && ID_LIKE="$ID"
+  [[ -z $PRETTY_NAME ]] && PRETTY_NAME="$NAME"
+  [[ -n $PRETTY_NAME && $DEBUG_MODE == true ]] && echo -e "${NL}${WHITE}Running on: ${GREEN}${PRETTY_NAME}${NC}"
+
+  if [[ $ENABLE_FLATPAK == true ]]; then
+    [[ -z $BIN_FLATPAK ]] && die "You must have 'flatpak' installed to use this feature from the script."
+
+    if [[ $SHOW_INFO == true ]]; then
+      echo -e "${NL}${CYAN}Gathering FlatPak package details...${NC}${NL}"
+      flatpak remote-info $FLATPAK_CHANNEL $PKG_NAME
+      echo -e "${NL}${CYAN}Done.${NC}${NL}"
+    else
+      echo -e "${NL}${CYAN}Searching in installed FlatPak repositories...${NC}${NL}"
+      # sort <(flatpak remote-ls --columns=all | grep -i $PKG_NAME)
+      sort <(flatpak search --columns=name,application,description,version,branch,remotes $PKG_NAME) | column -t
+      echo -e "${NL}${CYAN}Done.${NC}${NL}"
+    fi
+  else
+    case $ID_LIKE in
+      "debian"|"ubuntu debian")
+        [[ -z $BIN_APT ]] && die "You must have 'apt' installed to run this script."
+
+        if [[ $SHOW_INFO == true ]]; then
+          echo -e "${NL}${CYAN}Gathering APT package details...${NC}${NL}"
+          apt-cache show $PKG_NAME
+        else
+          echo -e "${NL}${CYAN}Searching in installed APT repositories...${NC}${NL}"
+          # sort <(apt-cache search $PKG_NAME) | grep --color=always -i $PKG_NAME
+          for P in $(apt-cache search $PKG_NAME | cut -d ' ' -f1 | sort | xargs) ; do
+            echo -n "$(apt-cache search "$P" | head -n1)" ; echo "$( get_apt_pkg_status "$P")"
+          done | grep --color=always -i $PKG_NAME
+          echo
+        fi
+        echo -e "${CYAN}Done.${NC}${NL}"
+      ;;
+      "arch")
+        if [[ -n $BIN_PARU ]]; then
+          if [[ $SHOW_INFO == true ]]; then
+            echo -e "${NL}${CYAN}Gathering Arch Linux package details...${NC}${NL}"
+            paru -Si $PKG_NAME
+          else
+            echo -e "${NL}${CYAN}Searching in installed Arch Linux repositories...${NC}${NL}"
+            paru -Ss --sortby=name $PKG_NAME
+          fi
+        elif [[ -n $BIN_PACMAN ]]; then
+          if [[ $SHOW_INFO == true ]]; then
+            echo -e "${NL}${CYAN}Gathering Arch Linux package details...${NC}${NL}"
+            pacman -Si $PKG_NAME
+          else
+            echo -e "${NL}${CYAN}Searching in installed Arch Linux repositories...${NC}${NL}"
+            pacman -Ss --sortby=name $PKG_NAME
+          fi
+        else
+          die "You must have 'paru' or 'pacman' installed to run this script."
+        fi
+        echo -e "${CYAN}Done.${NC}${NL}"
+      ;;
+      *) die "$PRETTY_NAME is currently not supported." ;;
+    esac
+  fi
+}
+function pkg_install() {
+  # Config
+  local DEBUG_MODE=true
+  local ENABLE_FLATPAK=false
+  local FLATPAK_CHANNEL=flathub
+
+  # Internals
+  local BIN_APT ; BIN_APT=$(command -v apt 2>/dev/null)
+  local BIN_PARU ; BIN_PARU=$(command -v paru 2>/dev/null)
+  local BIN_PACMAN ; BIN_PACMAN=$(command -v pacman 2>/dev/null)
+  local BIN_FLATPAK ; BIN_FLATPAK=$(command -v flatpak 2>/dev/null)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: pkg_install [flags] <package> -- Install packages on any Linux distribs."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Args
+  [[ $1 == "-f" || $1 == "--flatpak" ]] && ENABLE_FLATPAK=true && shift
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing package name."
+
+  # Init
+  local PKG_NAME=$@
+
+  # Main
+  [[ -r /etc/os-release ]] && source /etc/os-release || die "Could not read '/etc/os-release' file."
+  [[ -z $ID ]] && die "Could not detect operating system."
+  [[ -z $ID_LIKE ]] && ID_LIKE="$ID"
+  [[ -z $PRETTY_NAME ]] && PRETTY_NAME="$NAME"
+  [[ -n $PRETTY_NAME && $DEBUG_MODE == true ]] && echo -e "${NL}${WHITE}Running on: ${GREEN}${PRETTY_NAME}${NC}"
+
+  if [[ $ENABLE_FLATPAK == true ]]; then
+    [[ -z $BIN_FLATPAK ]] && die "You must have 'flatpak' installed to use this feature from the script."
+
+    echo -e "${NL}${CYAN}Installing package from ${PURPLE}FlatPak${CYAN} repositories...${NC}${NL}"
+    flatpak install $FLATPAK_CHANNEL $PKG_NAME
+    echo -e "${NL}${CYAN}Done.${NC}${NL}"
+  else
+    case $ID_LIKE in
+      "debian"|"ubuntu debian")
+        echo -e "${NL}${CYAN}Installing package from ${PURPLE}APT${CYAN} repositories...${NC}${NL}"
+        if [[ -n $BIN_APT ]]; then
+          sudo apt install ${PKG_NAME[@]}
+        else
+          die "You must have 'apt' installed to run this script."
+        fi
+        echo -e "${NL}${CYAN}Done.${NC}${NL}"
+      ;;
+      "arch")
+        echo -e "${NL}${CYAN}Installing package from ${PURPLE}ArchLinux${CYAN} repositories...${NC}${NL}"
+        if [[ -n $BIN_PARU ]]; then
+          paru -S ${PKG_NAME[@]}
+        elif [[ -n $BIN_PACMAN ]]; then
+          sudo pacman -S ${PKG_NAME[@]}
+        else
+          die "You must have 'paru' or 'pacman' installed to run this script."
+        fi
+        echo -e "${NL}${CYAN}Done.${NC}${NL}"
+      ;;
+      *) die "$PRETTY_NAME is currently not supported." ;;
+    esac
+  fi
+}
+function get_raw_key() {
+  read -rsn1 -t 0.0001 k1
+  read -rsn1 -t 0.0001 k2
+  read -rsn1 -t 0.0001 k3
+  read -rsn1 -t 0.0001 k4
+  key+=${k1}${k2}${k3}${k4}
+  echo $key | hexdump -C
+}
+function get_raw_keys() {
+  shopt -s extglob
+
+  local key=
+  local mod=
+
+  case "$1" in
+    $'\177' ) key=BACKSPACE ;;
+      $'\b' ) key=CTRL_BACKSPACE ;;
+      $'\n' ) key=ENTER ;;
+  $'\E\177' ) key=ALT_BACKSPACE ;;
+    $'\E\b' ) key=CTRL_ALT_BACKSPACE ;;
+
+      $'\t' ) key=TAB ;;
+    $'\E[Z' ) key=SHIFT_TAB ;;
+
+      $'\E' ) key=ESCAPE ;;
+        ' ' ) key=SPACE ;;
+  esac
+
+  if [ -z "${key:+x}" ] && [ "${1:0:1}" = $'\E' ]; then
+    case "${1#$'\E'}" in
+    \[??\(?\)\;2? ) mod=SHIFT_ ;;
+    \[??\(?\)\;3? ) mod=ALT_ ;;
+    \[??\(?\)\;4? ) mod=ALT_SHIFT_ ;;
+    \[??\(?\)\;5? ) mod=CTRL_ ;;
+    \[??\(?\)\;6? ) mod=CTRL_SHIFT_ ;;
+    \[??\(?\)\;7? ) mod=CTRL_ALT_ ;;
+    \[??\(?\)\;8? ) mod=CTRL_ALT_SHIFT_ ;;
+    esac
+
+    case "${1#$'\E'}" in
+    OA | \[?\(1\;?\)A ) key="${mod}UP" ;;
+    OB | \[?\(1\;?\)B ) key="${mod}DOWN" ;;
+    OC | \[?\(1\;?\)C ) key="${mod}RIGHT" ;;
+    OD | \[?\(1\;?\)D ) key="${mod}LEFT" ;;
+
+    OP | \[?\(1\;?\)P ) key="${mod}F1" ;;
+    OQ | \[?\(1\;?\)Q ) key="${mod}F2" ;;
+    OR | \[?\(1\;?\)R ) key="${mod}F3" ;;
+    OS | \[?\(1\;?\)S ) key="${mod}F4" ;;
+        \[15?\(\;?\)~ ) key="${mod}F5" ;;
+        \[17?\(\;?\)~ ) key="${mod}F6" ;;
+        \[18?\(\;?\)~ ) key="${mod}F7" ;;
+        \[19?\(\;?\)~ ) key="${mod}F8" ;;
+        \[20?\(\;?\)~ ) key="${mod}F9" ;;
+        \[21?\(\;?\)~ ) key="${mod}F10" ;;
+        \[23?\(\;?\)~ ) key="${mod}F11" ;;
+        \[24?\(\;?\)~ ) key="${mod}F12" ;;
+
+      \[?\(?\(1\)\;?\)E ) key="${mod}EMPTY" ;;
+      \[?\(?\(1\)\;?\)F ) key="${mod}END" ;;
+      \[?\(?\(1\)\;?\)H ) key="${mod}HOME" ;;
+
+         \[2?\(\;?\)~ ) key="${mod}INSERT" ;;
+         \[3?\(\;?\)~ ) key="${mod}DELETE" ;;
+
+         \[5?\(\;?\)~ ) key="${mod}PAGEUP" ;;
+         \[6?\(\;?\)~ ) key="${mod}PAGEDOWN" ;;
+    esac
+  fi
+
+  printf '%s' "${key:-$1}"
+}
+function dump_key() {
+  # Get raw input key value
+  #
+  # Taken from:
+  # - https://stackoverflow.com/a/16351746
+  #
+  # Note: Not all keys are supported.
+  #
+  # Version: 0.0.0
+
+  echo -e "\nGet raw input key value\n\nPress [Ctrl + C] to exit...\n"
+  while read -rsn1 key; do get_raw_key; done
+}
+function show_key() {
+  # Input key detector method
+  # Modified by Jiab77
+  #
+  # Adapted from:
+  # - https://stackoverflow.com/questions/10679188/casing-arrow-keys-in-bash
+  #
+  # ANSI cursor codes from:
+  # - https://stackoverflow.com/a/58421653
+  #
+  # Version: 0.1.0
+
+  escape_char=$(printf "\x1b")
+  backspace_char=$(printf "\x7f")
+  space_char=$(printf "\x20")
+  enter_char=$(printf "\x0a")
+  plus_char=$(printf "\x2b")
+  minus_char=$(printf "\x2d")
+
+  echo -e "\nDetect given input key (prints raw value if not supported)\n\nPress [Ctrl + C] to exit...\n"
+  while read -rsn1 key # 1 char (not delimiter), silent
+  do
+
+    read -rsn1 -t 0.0001 k1 # char n+1
+    read -rsn1 -t 0.0001 k2 # char n+2
+    read -rsn1 -t 0.0001 k3 # char n+3
+    read -rsn1 -t 0.0001 k4 # char n+4
+
+    key+=${k1}${k2}${k3}${k4}
+
+    case "$key" in
+      $escape_char) echo Escape ;;
+      $backspace_char) echo Backspace ;;
+      $enter_char) echo "Enter/Space" ;;
+      $plus_char) echo "+" ;;
+      $minus_char) echo "-" ;;
+      "${escape_char}[A") echo Up ;;
+      "${escape_char}[B") echo Down ;;
+      "${escape_char}[C") echo Right ;;
+      "${escape_char}[D") echo Left ;;
+      "${escape_char}[2~") echo Insert ;;
+      "${escape_char}[E") echo Empty ;;
+      "${escape_char}[7~"|"${escape_char}[H") echo Home ;;
+      "${escape_char}[8~"|"${escape_char}[F") echo End ;;
+      "${escape_char}[3~") echo Delete ;;
+      "${escape_char}[5~") echo PageUp ;;
+      "${escape_char}[6~") echo PageDown ;;
+      "${escape_char}[11~"|"${escape_char}OP") echo F1 ;;
+      "${escape_char}[12~"|"${escape_char}OQ") echo F2 ;;
+      "${escape_char}[13~"|"${escape_char}OR") echo F3 ;;
+      "${escape_char}[14~"|"${escape_char}OS") echo F4 ;;
+      "${escape_char}[15~") echo F5 ;;
+      "${escape_char}[16~") echo Fx ;;
+      "${escape_char}[17~") echo F6 ;;
+      "${escape_char}[18~") echo F7 ;;
+      "${escape_char}[19~") echo F8 ;;
+      "${escape_char}[20~") echo F9 ;;
+      "${escape_char}[21~") echo F10 ;;
+      "${escape_char}[22~") echo Fy ;;
+      "${escape_char}[23~") echo F11 ;;
+      "${escape_char}[24~") echo F12 ;;
+      q) # q: quit
+        echo Bye!
+        return
+      ;;
+      *) echo -e "Key: $key\nRaw:" ; echo $key | hexdump -C ;;
+    esac
+
+  done
+}
+function show_raw_keys() {
+  echo -e "\nHit [Ctrl + C] to exit...\n"
+  while read -rsN1 c; do
+    d=
+    read -t 0.001 -rsd $'\0' d
+    c+="$d"
+    printf "%q \t%q\n" "$c" "$(get_raw_keys "$c")"
+  done
+}
+function enable_bbr() {
+  # Config
+  local IS_ENABLED
+  local RET_CODE_LOAD
+  local RET_CODE_RELOAD
+  local BBR_MODULE_FILE="/etc/modules-load.d/bbr.conf"
+  local BBR_CONFIG_FILE="/etc/sysctl.d/10-bbr.conf"
+  local IS_SUPER_USER ; IS_SUPER_USER=$(is_root ; echo $?)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: enable_bbr [flags] -- Enable 'BBR' congestion control protocol."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Main
+  echo -e "${NL}${WHITE}Analyzing current settings..."
+  if [[ $(sysctl net.ipv4.tcp_available_congestion_control | grep -ci 'bbr') -eq 0 ]]; then
+    IS_ENABLED=false
+  else
+    IS_ENABLED=true
+  fi
+  if [[ $IS_ENABLED == true ]]; then
+    echo -e "${NL}${RED}BBR${YELLOW} is already enabled.${NC}"
+    echo -e "${NL}${CYAN}Nothing changed.${NC}${NL}"
+    return
+  else
+    echo -e "${NL}${WHITE}Applying changes required for '${PURPLE}BBR${WHITE}'...${NC}"
+    if [[ $IS_SUPER_USER -eq 0 ]]; then
+      modprobe tcp_bbr
+      RET_CODE_LOAD=$?
+      echo "tcp_bbr" > "$BBR_MODULE_FILE"
+    else
+      sudo modprobe tcp_bbr
+      RET_CODE_LOAD=$?
+      echo "tcp_bbr" | sudo tee "$BBR_MODULE_FILE"
+    fi
+    if [[ $RET_CODE_LOAD -eq 0 && $(sysctl net.ipv4.tcp_available_congestion_control | grep -ci 'bbr') -eq 1 ]]; then
+      echo -e "${NL}${WHITE}Module '${PURPLE}BBR${WHITE}' loaded.${NC}"
+    else
+      die "Could not load '${YELLOW}BBR${RED}' module."
+    fi
+    if [[ ! -r /etc/sysctl.d/10-bbr.conf ]]; then
+      if [[ $IS_SUPER_USER -eq 0 ]]; then
+        echo "net.ipv4.tcp_congestion_control = bbr" > "$BBR_CONFIG_FILE"
+        echo "net.core.default_qdisc = fq" >> "$BBR_CONFIG_FILE"
+      else
+        echo "net.ipv4.tcp_congestion_control = bbr" | sudo tee "$BBR_CONFIG_FILE"
+        echo "net.core.default_qdisc = fq" | sudo tee -a "$BBR_CONFIG_FILE"
+      fi
+    fi
+
+    echo -ne "${NL}${WHITE}Reloading config..."
+    if [[ $IS_SUPER_USER -eq 0 ]]; then
+      sysctl -p "$BBR_CONFIG_FILE" &>/dev/null
+      RET_CODE_RELOAD=$?
+    else
+      sudo sysctl -p "$BBR_CONFIG_FILE" &>/dev/null
+      RET_CODE_RELOAD=$?
+    fi
+    if [[ $RET_CODE_RELOAD -eq 0 ]]; then
+      echo -e " ${GREEN}done${NC}"
+    else
+      echo -e " ${RED}failed${NC}"
+      die "You might need to reboot your computer and try again."
+    fi
+  fi
+}
+function get_user_info() {
+    echo >&2
+    read -rp "Username: " GIVEN_USER
+    read -rp "eMail: " GIVEN_EMAIL
+}
+function update_git_safe_dirs() {
+  # Config
+  local BASE_FOLDER ; BASE_FOLDER="$1"
+  local PROJECT_PATH ; PROJECT_PATH="${BASE_FOLDER}/$2"
+
+  # Checks
+  [[ $# -ne 2 ]] && die "Missing arguments. (BASE_FOLDER, PROJECT_NAME)"
+
+  # Main
+  if [[ -d "$PROJECT_PATH" ]]; then
+    echo -ne "\nChecking project '$(basename "$PROJECT_PATH")' in 'git' config..."
+    if [[ $(git config --list --global | grep -ci $PROJECT_PATH) -eq 0 ]]; then
+      git config --global --add safe.directory $PROJECT_PATH
+      RES_CODE_GIT=$?
+      if [[ $RES_CODE_GIT -eq 0 ]]; then
+        echo -ne " ${CYAN}added${NC}"
+      else
+        echo -ne " ${RED}error${NC}"
+      fi
+    else
+      echo -ne " ${YELLOW}already added${NC}"
+    fi
+  fi
+}
+function git_check() {
+  # Config
+  local TITLE
+  local FOLDER_COUNT=0
+  local BASE_FOLDER ; BASE_FOLDER=${1:-"$HOME/Projects"}
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: git_check [flags] -- Check 'git' repositories if they are updated."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Main
+  cd "$BASE_FOLDER" || die "Could not move to '$BASE_FOLDER'."
+  for D in $(find . -maxdepth 1 -type d ! -wholename . | sort -h) ; do
+    TITLE="Analyzing [$(basename "$D")]..."
+    set_console_title "$TITLE"
+    echo -ne "\n${TITLE}"
+    ((FOLDER_COUNT++))
+    cd "${BASE_FOLDER}/$D" && (
+      if [[ ! -r "${BASE_FOLDER}/$D/.git" ]]; then
+        echo -ne " ${YELLOW}skipped${NC}"
+        return
+      fi
+      git diff --quiet &>/dev/null || echo -ne " ${CYAN}updated${NC}"
+    )
+  done
+  echo ; echo -e "\nTotal: $FOLDER_COUNT\n" ; cd "$BASE_FOLDER"
+}
+function git_init() {
+  # Config
+  GIVEN_USER="$1"
+  GIVEN_EMAIL="$2"
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: git_init [flags] <username> <email> -- Initialize 'git' config."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ $# -eq 0 ]] && get_user_info
+  [[ $# -gt 2 ]] && die "Too many arguments."
+  if [[ -z $GIVEN_USER || -z $GIVEN_EMAIL ]]; then
+    die "You must provide your ${YELLOW}username${RED} and ${YELLOW}email${RED} address for initializing ${WHITE}git."
+  fi
+
+  # Main
+  echo -ne "${NL}${WHITE}Initializing ${YELLOW}git${WHITE}...${NC}"
+
+  # General settings
+  git config --global user.name "$GIVEN_USER"
+  git config --global user.email "$GIVEN_EMAIL"
+  git config --global push.default simple
+
+  # Working with submodules
+  git config --global push.recurseSubmodules on-demand
+
+  # Enable credential cache for maximum lazyness
+  git config --global credential.helper cache
+
+  # Confirmation
+  if [[ $(git config --global user.name) == "$GIVEN_USER" && $(git config --global user.email) == "$GIVEN_EMAIL" ]]; then
+    echo -e " ${GREEN}done${NC}"
+    echo -e "${NL}${WHITE}Result:${NC}${NL}"
+    git config --global --list
+    echo -e "${NL}${WHITE}Enjoy :)${NC}${NL}"
+  else
+    echo -e " ${RED}failed${NC}${NL}"
+    return 1
+  fi
+
+  # Clean
+  unset GIVEN_USER
+  unset GIVEN_EMAIL
+}
+function git_owner_fix() {
+  # Config
+  local DEBUG_MODE=false
+  local DRY_RUN=false
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: git_check [flags] -- Fix ownership issues that happens sometimes with 'git'."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Args
+  [[ $1 == "-d" || $1 == "--debug" ]] && DEBUG_MODE=true && shift
+  [[ $1 == "-n" || $1 == "--dry-run" ]] && DRY_RUN=true && shift
+
+  # Init
+  local BASE_FOLDER ; BASE_FOLDER=${1:-"$HOME/Projects"}
+
+  # Checks
+  [[ ! -r $BASE_FOLDER ]] && die "Could not read specified projects folder."
+
+  # Main
+  echo -e "\nInitializing..."
+  if [[ $DRY_RUN == true ]]; then
+    find $BASE_FOLDER -maxdepth 1 -type d ! -wholename $BASE_FOLDER \
+      -exec echo "[DRY-RUN] Should run function 'update_git_safe_dirs' with '{}' as argument." \;
+  else
+    if [[ $DEBUG_MODE == true ]]; then
+      for D in $(ls -1 $BASE_FOLDER | grep -vi $BASE_FOLDER); do
+        echo "[DEBUG] Running: update_git_safe_dirs '$BASE_FOLDER' '$D'"
+        update_git_safe_dirs "$BASE_FOLDER" "$D"
+      done
+    else
+      for D in $(ls -1 $BASE_FOLDER | grep -vi $BASE_FOLDER); do
+        update_git_safe_dirs "$BASE_FOLDER" "$D"
+      done
+    fi
+  fi
+  echo ; echo -e "\nDone.\n"
+}
+
+# Aliases
+alias get_version=get_self_version
+alias is_root_or_die=be_root_or_die
+alias log_err=err_log
+alias screen_lock2=screen_lock
+alias screen_unlock2=screen_unlock
+alias show_env=get_env
+alias sf_dl=sf_download
 
 # Checks
 [[ -n "${BASH_SOURCE[0]}" && -x "${BASH_SOURCE[0]}" ]] && die "This file is not intended to be executable. Please remove 'exec' permission."
@@ -536,5 +1520,6 @@ function find_leaks() {
 # Arguments (if called with 'bash' itself)
 [[ $1 == "-h" || $1 == "--help" ]] && show_self_usage
 [[ $1 == "-c" || $1 == "--changelog" ]] && show_self_changes
+[[ $1 == "-i" || $1 == "--install" ]] && self_install
 [[ $1 == "-l" || $1 == "--list" ]] && show_self_functions
 [[ $1 == "-v" || $1 == "--version" ]] && show_self_version
