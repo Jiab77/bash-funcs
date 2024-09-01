@@ -21,7 +21,7 @@
 #
 # error messages color have been changed too.
 #
-# Version 0.4.0
+# Version 0.5.0
 
 # Colors
 RED="\033[1;31m"
@@ -186,7 +186,7 @@ function show_errors() {
   [[ -z $BIN_JCTL ]] && die "You must have 'journalctl' installed to run this script."
 
   # Main
-  journalctl -fn "$MAX_OUTPUT_LINES" -p4
+  journalctl -fn "$MAX_OUTPUT_LINES" -p4 -b
 }
 function show_logs() {
   # Config
@@ -235,11 +235,11 @@ function set_env() {
     return 1
   fi
 }
-# shellcheck disable=SC2012
-function get_thermal_zones_count() {
-  local TZ_COUNT
-  TZ_COUNT=$(ls -1d /sys/class/thermal/thermal_zone* | wc -l)
-  echo -n $((TZ_COUNT-1))
+# Thanks 'fonciarz" from THC group for suggesting
+# to check for 'noexec' mount option before trying
+# to run download scripts.
+function check_shm_noexec() {
+  mount | grep /dev/shm | grep -c noexec
 }
 function check_device_temp() {
   if [[ $1 -le 30 ]]; then
@@ -253,6 +253,12 @@ function check_device_temp() {
   else
     echo -e "${PURPLE}undefined${NC}"
   fi
+}
+# shellcheck disable=SC2012
+function get_thermal_zones_count() {
+  local TZ_COUNT
+  TZ_COUNT=$(ls -1d /sys/class/thermal/thermal_zone* | wc -l)
+  echo -n $((TZ_COUNT-1))
 }
 # shellcheck disable=SC2013
 function get_device_temp() {
@@ -626,7 +632,7 @@ function hex_decode() {
 
   # Main
   if [[ -r "$INPUT_STRING" ]]; then
-    OUTPUT_STRING="$(echo -ne $(cat "$INPUT_STRING"))"
+    OUTPUT_STRING="$(echo -ne "$(cat "$INPUT_STRING")")"
   else
     OUTPUT_STRING="$(echo -ne "$INPUT_STRING")"
   fi
@@ -715,13 +721,16 @@ function sf_proxy() {
   # Check for user secret value
   [[ -n $1 ]] && USER_SECRET="$1"
 
+  # Check for possibly stored secret file
+  [[ -z $USER_SECRET && -r $HOME/.sf-secret ]] && USER_SECRET=$(cat "$HOME/.sf-secret")
+
   # Main
   if [[ -n $USER_SECRET ]]; then
     echo -e "${NL}Connecting... [Using given secret value]${NL}"
-    ssh -o "SetEnv SECRET=$USER_SECRET" -D "$PROXY_ADDR" "$SERVER_ADDR"
+    ssh -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o PreferredAuthentications=password -o "SetEnv SECRET=$USER_SECRET" -D "$PROXY_ADDR" "$SERVER_ADDR"
   else
     echo -e "${NL}Connecting... [Password is: segfault]${NL}"
-    ssh -D "$PROXY_ADDR" "$SERVER_ADDR"
+    ssh -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o PreferredAuthentications=password -D "$PROXY_ADDR" "$SERVER_ADDR"
   fi
 }
 function sf_download() {
@@ -743,7 +752,7 @@ function sf_download() {
 
   # Main
   if [[ $(ss -tunl | grep -c 1080) -ne 0 ]]; then
-    curl -fsSL -x socks5h://0 $@
+    curl -fsSL -x socks5h://0 "$@"
   else
     die "Please run the 'sf_proxy' command in another terminal and try again."
   fi
@@ -849,6 +858,9 @@ function bench() {
   local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
   local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
 
+  # Checks
+  [[ $(check_shm_noexec) -eq 1 ]] && die "Mountpoint '/dev/shm' has been mounted with 'noexec' option."
+
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
     echo -e "${NL}Usage: bench [flags] -- Benchmark device using the 'bench.sh' service."
@@ -876,11 +888,14 @@ function updater() {
   local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
   local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
 
+  # Checks
+  [[ $(check_shm_noexec) -eq 1 ]] && die "Mountpoint '/dev/shm' has been mounted with 'noexec' option."
+
   # Get script from repo
   if [[ -n $BIN_CURL ]]; then
     curl -sSL "$UPDATER_URL" > "$UPDATER_PATH"
   elif [[ -n $BIN_WGET ]]; then
-    wget -qO "$UPDATER_URL" > "$UPDATER_PATH"
+    wget -qO- "$UPDATER_URL" > "$UPDATER_PATH"
   else
     die "Please install 'curl' or 'wget' and try again."
   fi
@@ -890,9 +905,9 @@ function updater() {
 
   # Main
   if [[ $(id -u) -eq 0 ]]; then
-    "$UPDATER_PATH" $@
+    "$UPDATER_PATH" "$@"
   else
-    sudo "$UPDATER_PATH" $@
+    sudo "$UPDATER_PATH" "$@"
   fi
 
   # Clean
@@ -907,11 +922,14 @@ function exfil() {
   local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
   local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
 
+  # Checks
+  [[ $(check_shm_noexec) -eq 1 ]] && die "Mountpoint '/dev/shm' has been mounted with 'noexec' option."
+
   # Get script from repo
   if [[ -n $BIN_CURL ]]; then
     curl -sSL "$EXFIL_URL" > "$EXFIL_PATH"
   elif [[ -n $BIN_WGET ]]; then
-    wget -qO "$EXFIL_URL" > "$EXFIL_PATH"
+    wget -qO- "$EXFIL_URL" > "$EXFIL_PATH"
   else
     die "Please install 'curl' or 'wget' and try again."
   fi
@@ -920,7 +938,7 @@ function exfil() {
   chmod +x "$EXFIL_PATH"
 
   # Main
-  "$EXFIL_PATH" $@
+  "$EXFIL_PATH" "$@"
 
   # Clean
   [[ -f "$EXFIL_PATH" ]] && rm -f "$EXFIL_PATH"
@@ -943,7 +961,7 @@ function download() {
   [[ -z $BIN_CURL ]] && die "Please, install 'curl' and try again."
 
   # Main
-  curl -fsSL $@
+  curl -fsSL "$@"
 }
 function get_apt_pkg_status() {
   local PKG_STATUS
@@ -966,8 +984,10 @@ function pkg_search() {
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
     echo -e "${NL}Usage: pkg_search [flags] <package> -- Search packages on any Linux distribs."
-    echo -e "${NL}Flags:${NL}  -h | --help    - Show help and exit${NL}  -i | --info    - Show package details"
-    echo -e "  -f | --flatpak    - Use flatpak backend"
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo -e "  -i | --info${TAB}Show package details"
+    echo -e "  -f | --flatpak${TAB}Use flatpak backend"
     echo
     return
   fi
@@ -1014,7 +1034,7 @@ function pkg_search() {
           echo -e "${NL}${CYAN}Searching in installed APT repositories...${NC}${NL}"
           # sort <(apt-cache search $PKG_NAME) | grep --color=always -i $PKG_NAME
           for P in $(apt-cache search $PKG_NAME | cut -d ' ' -f1 | sort | xargs) ; do
-            echo -n "$(apt-cache search "$P" | head -n1)" ; echo "$( get_apt_pkg_status "$P")"
+            echo -n "$(apt-cache search "$P" | head -n1)" ; echo "$(get_apt_pkg_status "$P")"
           done | grep --color=always -i $PKG_NAME
           echo
         fi
@@ -1054,6 +1074,7 @@ function pkg_install() {
 
   # Internals
   local BIN_APT ; BIN_APT=$(command -v apt 2>/dev/null)
+  local BIN_DPKG ; BIN_DPKG=$(command -v dpkg 2>/dev/null)
   local BIN_PARU ; BIN_PARU=$(command -v paru 2>/dev/null)
   local BIN_PACMAN ; BIN_PACMAN=$(command -v pacman 2>/dev/null)
   local BIN_FLATPAK ; BIN_FLATPAK=$(command -v flatpak 2>/dev/null)
@@ -1063,6 +1084,7 @@ function pkg_install() {
     echo -e "${NL}Usage: pkg_install [flags] <package> -- Install packages on any Linux distribs."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
+    echo -e "  -f | --flatpak${TAB}Use flatpak backend"
     echo
     return
   fi
@@ -1092,11 +1114,16 @@ function pkg_install() {
   else
     case $ID_LIKE in
       "debian"|"ubuntu debian")
-        echo -e "${NL}${CYAN}Installing package from ${PURPLE}APT${CYAN} repositories...${NC}${NL}"
-        if [[ -n $BIN_APT ]]; then
-          sudo apt install ${PKG_NAME[@]}
+        if [[ -n $BIN_APT && -n $BIN_DPKG ]]; then
+          if [[ ${PKG_NAME[*]} == *.deb ]]; then
+            echo -e "${NL}${CYAN}Installing ${PURPLE}deb${CYAN} package...${NC}${NL}"
+            sudo dpkg -i "${PKG_NAME[@]}"
+          else
+            echo -e "${NL}${CYAN}Installing package from ${PURPLE}APT${CYAN} repositories...${NC}${NL}"
+            sudo apt install "${PKG_NAME[@]}"
+          fi
         else
-          die "You must have 'apt' installed to run this script."
+          die "You must have 'apt' and 'dpkg' installed to run this script."
         fi
         echo -e "${NL}${CYAN}Done.${NC}${NL}"
       ;;
@@ -1121,7 +1148,7 @@ function get_raw_key() {
   read -rsn1 -t 0.0001 k3
   read -rsn1 -t 0.0001 k4
   key+=${k1}${k2}${k3}${k4}
-  echo $key | hexdump -C
+  echo "$key" | hexdump -C
 }
 function get_raw_keys() {
   shopt -s extglob
@@ -1231,11 +1258,11 @@ function show_key() {
     key+=${k1}${k2}${k3}${k4}
 
     case "$key" in
-      $escape_char) echo Escape ;;
-      $backspace_char) echo Backspace ;;
-      $enter_char) echo "Enter/Space" ;;
-      $plus_char) echo "+" ;;
-      $minus_char) echo "-" ;;
+      "$escape_char") echo Escape ;;
+      "$backspace_char") echo Backspace ;;
+      "$enter_char") echo "Enter/Space" ;;
+      "$plus_char") echo "+" ;;
+      "$minus_char") echo "-" ;;
       "${escape_char}[A") echo Up ;;
       "${escape_char}[B") echo Down ;;
       "${escape_char}[C") echo Right ;;
@@ -1317,7 +1344,7 @@ function enable_bbr() {
     else
       sudo modprobe tcp_bbr
       RET_CODE_LOAD=$?
-      echo "tcp_bbr" | sudo tee "$BBR_MODULE_FILE"
+      echo "tcp_bbr" | sudo tee "$BBR_MODULE_FILE" &>/dev/null
     fi
     if [[ $RET_CODE_LOAD -eq 0 && $(sysctl net.ipv4.tcp_available_congestion_control | grep -ci 'bbr') -eq 1 ]]; then
       echo -e "${NL}${WHITE}Module '${PURPLE}BBR${WHITE}' loaded.${NC}"
@@ -1329,8 +1356,8 @@ function enable_bbr() {
         echo "net.ipv4.tcp_congestion_control = bbr" > "$BBR_CONFIG_FILE"
         echo "net.core.default_qdisc = fq" >> "$BBR_CONFIG_FILE"
       else
-        echo "net.ipv4.tcp_congestion_control = bbr" | sudo tee "$BBR_CONFIG_FILE"
-        echo "net.core.default_qdisc = fq" | sudo tee -a "$BBR_CONFIG_FILE"
+        echo "net.ipv4.tcp_congestion_control = bbr" | sudo tee "$BBR_CONFIG_FILE" &>/dev/null
+        echo "net.core.default_qdisc = fq" | sudo tee -a "$BBR_CONFIG_FILE" &>/dev/null
       fi
     fi
 
@@ -1343,17 +1370,88 @@ function enable_bbr() {
       RET_CODE_RELOAD=$?
     fi
     if [[ $RET_CODE_RELOAD -eq 0 ]]; then
-      echo -e " ${GREEN}done${NC}"
+      echo -e " ${GREEN}done${NC}${NL}"
     else
       echo -e " ${RED}failed${NC}"
       die "You might need to reboot your computer and try again."
     fi
   fi
 }
+function get_fs_size() {
+  # Config
+  local FS_NAME
+  local HUMAN_SIZE=false
+  local FREE_SIZE=false
+  local FIELD_SIZE="FSSIZE"
+  local OPT_ARGS="-b"
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: get_fs_sze [flags] <mountpoint> -- Return size of given mountpoint."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo -e "  -f | --free${TAB}Print free size instead of full size"
+    echo -e "  -H | --human-size${TAB}Print size in human friendly format"
+    echo
+    return
+  fi
+
+  # Flags
+  if [[ $1 == "-f" || $1 == "--free-size" ]]; then
+    FREE_SIZE=true ; shift
+  fi
+  if [[ $1 == "-H" || $1 == "--human-size" ]]; then
+    HUMAN_SIZE=true ; shift
+  fi
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing argument: mountpoint"
+
+  # Init
+  FS_NAME="$1"
+
+  # Main
+  [[ $HUMAN_SIZE == true ]] && unset OPT_ARGS
+  [[ $FREE_SIZE == true ]] && FIELD_SIZE="FSAVAIL"
+  lsblk -npr $OPT_ARGS -x MOUNTPOINT -o $FIELD_SIZE,MOUNTPOINT | grep -m1 "$FS_NAME" | cut -d" " -f1
+}
+function get_file_size() {
+  # Config
+  local FILE_NAME
+  local HUMAN_SIZE=false
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: get_file_sze [flags] <file> -- Return size of given file."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo -e "  -H | --human-size${TAB}Print size in human friendly format"
+    echo
+    return
+  fi
+
+  # Flags
+  if  [[ $1 == "-H" || $1 == "--human-size" ]]; then
+    HUMAN_SIZE=true ; shift
+  fi
+
+  # Checks
+  [[ $# -eq 0 ]] && die "Missing argument: file"
+
+  # Init
+  FILE_NAME="$1"
+
+  # Main
+  if [[ $HUMAN_SIZE == true ]]; then
+    die "Not implemented yet."
+  else
+    stat -Lc "%s" "$FILE_NAME"
+  fi
+}
 function get_user_info() {
-    echo >&2
-    read -rp "Username: " GIVEN_USER
-    read -rp "eMail: " GIVEN_EMAIL
+  echo >&2
+  read -rp "Username: " GIVEN_USER
+  read -rp "eMail: " GIVEN_EMAIL
 }
 function update_git_safe_dirs() {
   # Config
@@ -1409,7 +1507,8 @@ function git_check() {
       git diff --quiet &>/dev/null || echo -ne " ${CYAN}updated${NC}"
     )
   done
-  echo ; echo -e "\nTotal: $FOLDER_COUNT\n" ; cd "$BASE_FOLDER"
+  echo ; echo -e "\nTotal: $FOLDER_COUNT\n"
+  cd "$BASE_FOLDER" || die "Failed to move back into: $BASE_FOLDER"
 }
 function git_init() {
   # Config
@@ -1488,7 +1587,7 @@ function git_owner_fix() {
   # Main
   echo -e "\nInitializing..."
   if [[ $DRY_RUN == true ]]; then
-    find $BASE_FOLDER -maxdepth 1 -type d ! -wholename $BASE_FOLDER \
+    find "$BASE_FOLDER" -maxdepth 1 -type d ! -wholename "$BASE_FOLDER" \
       -exec echo "[DRY-RUN] Should run function 'update_git_safe_dirs' with '{}' as argument." \;
   else
     if [[ $DEBUG_MODE == true ]]; then
@@ -1503,6 +1602,56 @@ function git_owner_fix() {
     fi
   fi
   echo ; echo -e "\nDone.\n"
+}
+function gen_ssh_key() {
+  echo ; read -rp "Your email address: " USER_EMAIL ; echo
+  ssh-keygen -t ed25519 -C "$USER_EMAIL"
+  unset USER_EMAIL
+}
+function list_ssh_keys() {
+  find ~/.ssh/*.pub -exec echo -n "{}: " \; -exec ssh-keygen -l -f {} \;
+}
+function describe_exit_code() {
+  # List of exit code taken from:
+  # https://www.cyberciti.biz/faq/linux-bash-exit-status-set-exit-statusin-bash/
+
+  local LAST_EXIT_CODE ; LAST_EXIT_CODE=$?
+  local EXIT_CODE
+
+  [[ $# -eq 0 ]] && EXIT_CODE=$LAST_EXIT_CODE || EXIT_CODE=$1
+
+  case $EXIT_CODE in
+    0)  echo "Success" ;;
+    1)  echo "Operation not permitted" ;;
+    2)  echo "No such file or directory" ;;
+    3)  echo "No such process" ;;
+    4)  echo "Interrupted system call" ;;
+    5)  echo "Input/output error" ;;
+    6)  echo "No such device or address" ;;
+    7)  echo "Argument list too long" ;;
+    8)  echo "Exec format error" ;;
+    9)  echo "Bad file descriptor" ;;
+    10) echo "No child processes" ;;
+    11) echo "Resource temporarily unavailable" ;;
+    12) echo "Cannot allocate memory" ;;
+    13) echo "Permission denied" ;;
+    14) echo "Bad address" ;;
+    15) echo "Block device required" ;;
+    16) echo "Device or resource busy" ;;
+    17) echo "File exists" ;;
+    18) echo "Invalid cross-device link" ;;
+    19) echo "No such device" ;;
+    20) echo "Not a directory" ;;
+    21) echo "Is a directory" ;;
+    22) echo "Invalid argument" ;;
+    23) echo "Too many open files in system" ;;
+    24) echo "Too many open files" ;;
+    25) echo "Inappropriate ioctl for device" ;;
+    *) die "Unknown exit code given." ;;
+  esac
+}
+function thc_greetings() {
+  echo -e "${NL}${CYAN}Greetings ${WHITE}to the ${GREEN}T${YELLOW}H${RED}C${WHITE} ${PURPLE}hacking${WHITE} group!${NC}${NL}"
 }
 
 # Aliases
@@ -1523,3 +1672,4 @@ alias sf_dl=sf_download
 [[ $1 == "-i" || $1 == "--install" ]] && self_install
 [[ $1 == "-l" || $1 == "--list" ]] && show_self_functions
 [[ $1 == "-v" || $1 == "--version" ]] && show_self_version
+[[ $1 == "--thc" ]] && thc_greetings
