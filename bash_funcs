@@ -21,7 +21,7 @@
 #
 # error messages color have been changed too.
 #
-# Version 0.5.0
+# Version 0.6.0
 
 # Colors
 RED="\033[1;31m"
@@ -37,8 +37,18 @@ TAB="\t"
 
 # Functions
 function bye() {
-  # TODO: Finish this method.
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Shorthand method for stopping computers"
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Main
   echo -e "${NL}Bye.${NL}"
+  sudo poweroff
 }
 function die() {
   echo -e "${NL}${RED}[ERROR] ${YELLOW}$*${NC}${NL}" >&2
@@ -52,6 +62,41 @@ function err_log() {
 }
 function log() {
   echo -e "${NL}$*${NC}${NL}"
+}
+function get_url() {
+  # Config
+  local QUIET_MODE=false
+  local WRAPPER
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] <url> -- Open URLs with 'curl' or 'wget'."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo -e "  -q | --quiet${TAB}Enable quiet mode"
+    echo
+    return
+  fi
+
+  # Flags
+  if [[ $1 == "-q" || $1 == "--quiet" ]]; then
+    QUIET_MODE=true
+    shift
+  fi
+
+  # Init
+  [[ -n $(command -v curl 2>/dev/null) ]] && WRAPPER="curl"
+  [[ -n $(command -v wget 2>/dev/null) && -z $WRAPPER ]] && WRAPPER="wget"
+  [[ -z $WRAPPER ]] && die "Unable to find proper backend. Please install 'curl' or 'wget' and try again."
+
+  # Main
+  if [[ $QUIET_MODE == true && $WRAPPER == "curl" ]]; then
+    $WRAPPER -s "$@"
+  elif [[ $QUIET_MODE == true && $WRAPPER == "wget" ]]; then
+    $WRAPPER -q "$@"
+  else
+    $WRAPPER "$@"
+  fi
 }
 function get_self_path() {
   local FILE_PATH
@@ -79,7 +124,7 @@ function show_self_header() {
 function show_self_usage() {
   local FILE_PATH ; FILE_PATH="$(get_self_path)"
 
-  echo -e "${NL}Usage: $(basename "$FILE_PATH") [flags] -- Collection of Bash functions"
+  echo -e "${NL}Usage: $FUNCNAME [flags] -- Collection of Bash functions"
   echo -e "${NL}Flags:"
   echo -e "  -h | --help${TAB}${TAB}Print this message and exit"
   echo -e "  -c | --changelog${TAB}Print latest changes and exit"
@@ -150,9 +195,9 @@ function show_diff() {
   local COLS ; COLS=$(tput cols)
   local SCREEN_SIZE=$((COLS-10))
 
-  # Flags
+  # Usage
   if [[ $# -eq 0 ||  $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: show_diff [flags] <old file> <new file> - Show differences between two files${NL}"
+    echo -e "${NL}Usage: $FUNCNAME [flags] <old file> <new file> - Show differences between two files${NL}"
     return
   fi
 
@@ -173,9 +218,9 @@ function show_errors() {
   # Internals
   local BIN_JCTL ; BIN_JCTL=$(command -v journalctl 2>/dev/null)
 
-  # Flags
+  # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: $(basename "$0") [flags] -- Show system logs using 'journalctl' from systemd."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Show system logs using 'journalctl' from systemd."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -195,9 +240,9 @@ function show_logs() {
   # Internals
   local BIN_JCTL ; BIN_JCTL=$(command -v journalctl 2>/dev/null)
 
-  # Flags
+  # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: $(basename "$0") [flags] -- Show system logs using 'journalctl' from systemd."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Show system logs using 'journalctl' from systemd."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -209,6 +254,28 @@ function show_logs() {
 
   # Main
   journalctl -fn "$MAX_OUTPUT_LINES" -b
+}
+function show_kernel_logs() {
+  # Config
+  local DEFAULT_ARGS="-wH"
+
+  # Internals
+  local BIN_DMESG ; BIN_DMESG=$(command -v dmesg 2>/dev/null)
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Show kernel logs using 'dmesg' command."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ -z $BIN_DMESG ]] && die "You must have 'dmesg' installed to run this script."
+
+  # Main
+  sudo dmesg "$DEFAULT_ARGS"
 }
 function show_version() {
   echo -e "${NL}Version: $(get_self_version)${NL}"
@@ -322,14 +389,19 @@ function is_xorg() {
   [[ -n $DISPLAY ]] && return 0
   return 1
 }
+function is_termux() {
+  [[ $(printenv | grep -ci "termux") -ne 0 ]] && return 0
+  return 1
+}
 function is_root() {
-  [[ $(id -u) -ne 0 ]] && return 1
+  [[ $(id -u) -eq 0 ]] && return 0
+  return 1
 }
 function be_root_or_die() {
   [[ $(id -u) -ne 0 ]] && die "You must run this script as root or with '${YELLOW}sudo${RED}'."
 }
 function clean_str() {
-  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+  [[ $# -eq 0 ]] && die "[$FUNCNAME] Too few arguments."
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR//\'/}"
@@ -337,8 +409,8 @@ function clean_str() {
   echo -n "$NEW_STR"
 }
 function str_replace() {
-  [[ $# -gt 3 ]] && die "[$(basename "$0")] Too many arguments."
-  [[ $# -lt 3 ]] && die "[$(basename "$0")] Too few arguments."
+  [[ $# -gt 3 ]] && die "[$FUNCNAME] Too many arguments."
+  [[ $# -lt 3 ]] && die "[$FUNCNAME] Too few arguments."
 
   local SEARCH ; SEARCH="$1"
   local REPLACE ; REPLACE="$2"
@@ -347,7 +419,7 @@ function str_replace() {
   echo -n "${SUBJECT//$SEARCH/$REPLACE}"
 }
 function str_to_lower() {
-  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+  [[ $# -eq 0 ]] && die "[$FUNCNAME] Too few arguments."
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR,,}"
@@ -355,7 +427,7 @@ function str_to_lower() {
   echo -n "$NEW_STR"
 }
 function str_to_upper() {
-  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+  [[ $# -eq 0 ]] && die "[$FUNCNAME] Too few arguments."
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR^^}"
@@ -363,7 +435,7 @@ function str_to_upper() {
   echo -n "$NEW_STR"
 }
 function str_lower_to_cap() {
-  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+  [[ $# -eq 0 ]] && die "[$FUNCNAME] Too few arguments."
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR,}"
@@ -371,7 +443,7 @@ function str_lower_to_cap() {
   echo -n "$NEW_STR"
 }
 function str_upper_to_cap() {
-  [[ $# -eq 0 ]] && die "[$(basename "$0")] Too few arguments."
+  [[ $# -eq 0 ]] && die "[$FUNCNAME] Too few arguments."
 
   local RAW_STR ; RAW_STR="$1"
   local NEW_STR ; NEW_STR="${RAW_STR^}"
@@ -457,6 +529,16 @@ function screen_lock() {
   #
   # Also thanks to Matthew from THC group for suggesting to reduce SSH backend checks
 
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Lock computer screen remotely."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Main
   if [[ $# -eq 0 ]]; then
     if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
       die "You must have 'loginctl' installed to run this function."
@@ -515,6 +597,16 @@ function screen_unlock() {
   #
   # Also thanks to Matthew from THC group for suggesting to reduce SSH backend checks
 
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Unlock computer screen remotely."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo
+    return
+  fi
+
+  # Main
   if [[ $# -eq 0 ]]; then
     if [[ -z $(command -v loginctl 2>/dev/null) ]]; then
       die "You must have 'loginctl' installed to run this function."
@@ -574,7 +666,7 @@ function find_leaks() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: find_leaks [flags] <folder> -- Find leaks in given folder."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <folder> -- Find leaks in given folder."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -614,9 +706,9 @@ function hex_decode() {
   local INPUT_STRING
   local OUTPUT_STRING
 
-  # Flags
+  # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: $(basename "$0") [flags] <input> -- Decode hex encoded string / file."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <input> -- Decode hex encoded string / file."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -647,9 +739,9 @@ function base64_decode() {
   local INPUT_STRING
   local OUTPUT_STRING
 
-  # Flags
+  # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: $(basename "$0") [flags] <input> -- Decode base64 encoded string / file."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <input> -- Decode base64 encoded string / file."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -680,9 +772,9 @@ function deobfuscate() {
   local INPUT_STRING
   local OUTPUT_STRING
 
-  # Flags
+  # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: deobfuscate [flags] <input> -- Decode obfuscated string / file."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <input> -- Decode obfuscated string / file."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -705,13 +797,15 @@ function deobfuscate() {
 }
 function sf_proxy() {
   # Thanks to the Segfault project created by the THC group
+
+  # Config
   local USER_SECRET
   local PROXY_ADDR="127.0.0.1:1080"
   local SERVER_ADDR="root@segfault.net"
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: sf_proxy [flags] [secret] -- Create web proxy using the SegFault project."
+    echo -e "${NL}Usage: $FUNCNAME [flags] [secret] -- Create web proxy using the SegFault project."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -734,12 +828,14 @@ function sf_proxy() {
   fi
 }
 function sf_download() {
+  # Thanks to the Segfault project created by the THC group
+
   # Internals
   local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: sf_download [flags] <url> -- Download given URL withing SegFault web proxy."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <url> -- Download given URL withing SegFault web proxy."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -758,12 +854,14 @@ function sf_download() {
   fi
 }
 function sf_ip() {
+  # Thanks to the Segfault project created by the THC group
+
   # Internals
   local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: sf_ip [flags] <url> -- Get IP address from SegFault web proxy."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Get IP address from SegFault web proxy."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -786,11 +884,11 @@ function sf_ip() {
 }
 function get_ip() {
   # Internals
-  local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
+  # local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: get_ip [flags] <url> -- Get IP address with the IPInfo service."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Get IP address with the IPInfo service."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -798,13 +896,15 @@ function get_ip() {
   fi
 
   # Checks
-  [[ -z $BIN_CURL ]] && die "Please, install 'curl' and try again."
+  # [[ -z $BIN_CURL ]] && die "Please, install 'curl' and try again."
 
   # Main
   if [[ -n $(command -v jq 2>/dev/null) ]]; then
-    curl -sSL ipinfo.io | jq .
+    # curl -sSL ipinfo.io | jq .
+    get_url -q ipinfo.io | jq .
   else
-    curl -sSL ipinfo.io ; echo
+    # curl -sSL ipinfo.io ; echo
+    get_url ipinfo.io ; echo
   fi
 }
 function my_ip() {
@@ -821,7 +921,7 @@ function my_ip() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: my_ip [flags] <url> -- Show device IP addresses."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Show device IP addresses."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo -e "  -j | --json${TAB}Return data in JSON format"
@@ -831,11 +931,11 @@ function my_ip() {
 
   # Main
   local_ip="$(ip -br a | grep -i "up" | awk '{ print $3 }')"
-  if [[ -n $(which dig 2>/dev/null) ]]; then
+  if [[ -n $(command -v dig 2>/dev/null) ]]; then
     external_ip="$(dig +short myip.opendns.com @resolver1.opendns.com)"
-  elif [[ -n $(which host 2>/dev/null) ]]; then
+  elif [[ -n $(command -v host 2>/dev/null) ]]; then
     external_ip="$(host myip.opendns.com resolver1.opendns.com)"
-  elif [[ -n $(which curl 2>/dev/null) ]]; then
+  elif [[ -n $(command -v curl 2>/dev/null) ]]; then
     #external_ip="$(curl -sSL ifconfig.io/ip)"
     external_ip="$(curl -sSL ifconfig.me)"
   else
@@ -858,12 +958,9 @@ function bench() {
   local BIN_CURL ; BIN_CURL=$(command -v curl 2>/dev/null)
   local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
 
-  # Checks
-  [[ $(check_shm_noexec) -eq 1 ]] && die "Mountpoint '/dev/shm' has been mounted with 'noexec' option."
-
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: bench [flags] -- Benchmark device using the 'bench.sh' service."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Benchmark device using the 'bench.sh' service."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -881,6 +978,7 @@ function bench() {
 }
 function updater() {
   # Config
+  local DEBUG_MODE=true
   local UPDATER_URL="https://raw.githubusercontent.com/Jiab77/updater/main/updater.sh"
   local UPDATER_PATH="/dev/shm/updater.sh"
 
@@ -889,7 +987,11 @@ function updater() {
   local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
 
   # Checks
-  [[ $(check_shm_noexec) -eq 1 ]] && die "Mountpoint '/dev/shm' has been mounted with 'noexec' option."
+  if [[ $(is_termux ; echo $?) -eq 0 ]]; then
+    UPDATER_PATH="/tmp/updater.sh"
+  else
+    [[ $(check_shm_noexec) -eq 1 ]] && die "Mountpoint '/dev/shm' has been mounted with 'noexec' option."
+  fi
 
   # Get script from repo
   if [[ -n $BIN_CURL ]]; then
@@ -903,15 +1005,47 @@ function updater() {
   # Set exec permission
   chmod +x "$UPDATER_PATH"
 
-  # Main
-  if [[ $(id -u) -eq 0 ]]; then
-    "$UPDATER_PATH" "$@"
+  # Debug
+  [[ $DEBUG_MODE == true ]] && UPDATER_PATH=~/Projects/updater/updater.sh
+
+  # OS-Release
+  [[ -r /etc/os-release ]] && source /etc/os-release
+
+  # Fix empty 'DISTRO' variable
+  if [[ -n $ID_LIKE ]]; then
+    DISTRO=$ID_LIKE
   else
-    sudo "$UPDATER_PATH" "$@"
+    DISTRO=$ID
   fi
 
+  # Add 'termux' support
+  if [[ -z $DISTRO && $(printenv | grep -ci "termux") -ne 0 ]]; then
+    DISTRO="termux"
+    PRETTY_NAME="Termux"
+  fi
+
+  # Main
+  [[ -z $PRETTY_NAME ]] && PRETTY_NAME="$NAME"
+  [[ -n $PRETTY_NAME && $DEBUG_MODE == true ]] && echo -e "${NL}${WHITE}Running on: ${GREEN}${PRETTY_NAME}${NC}"
+  # if [[ $(id -u) -eq 0 ]]; then
+  #   "$UPDATER_PATH" "$@"
+  # else
+  #   sudo "$UPDATER_PATH" "$@"
+  # fi
+
+  # Select proper run method
+  case $DISTRO in
+    "debian"|"ubuntu"|"ubuntu debian") sudo "$UPDATER_PATH" "$@" ;;
+    "redhat"|"rhel fedora"|"rhel centos fedora"|"rancheros") sudo "$UPDATER_PATH" "$@" ;;
+    "arch"|"cachyos") "$UPDATER_PATH" "$@" ;;
+    "termux") "$UPDATER_PATH" "$@" ;;
+    *) die "OS '${WHITE}${DISTRO}${RED}' not supported." ;;
+  esac
+
   # Clean
-  [[ -f "$UPDATER_PATH" ]] && rm -f "$UPDATER_PATH"
+  if [[ $DEBUG_MODE == false ]]; then
+    [[ -f "$UPDATER_PATH" ]] && rm -f "$UPDATER_PATH"
+  fi
 }
 function exfil() {
   # Config
@@ -923,7 +1057,11 @@ function exfil() {
   local BIN_WGET ; BIN_WGET=$(command -v wget 2>/dev/null)
 
   # Checks
-  [[ $(check_shm_noexec) -eq 1 ]] && die "Mountpoint '/dev/shm' has been mounted with 'noexec' option."
+  if [[ $(is_termux ; echo $?) -eq 0 ]]; then
+    EXFIL_PATH="/tmp/exfil.sh"
+  else
+    [[ $(check_shm_noexec) -eq 1 ]] && die "Mountpoint '/dev/shm' has been mounted with 'noexec' option."
+  fi
 
   # Get script from repo
   if [[ -n $BIN_CURL ]]; then
@@ -949,7 +1087,7 @@ function download() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: download [flags] <url> -- Download given URL."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <url> -- Download given URL."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -983,7 +1121,7 @@ function pkg_search() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: pkg_search [flags] <package> -- Search packages on any Linux distribs."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <package> -- Search packages on any Debian / Arch Linux based distribs."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo -e "  -i | --info${TAB}Show package details"
@@ -1019,7 +1157,8 @@ function pkg_search() {
     else
       echo -e "${NL}${CYAN}Searching in installed FlatPak repositories...${NC}${NL}"
       # sort <(flatpak remote-ls --columns=all | grep -i $PKG_NAME)
-      sort <(flatpak search --columns=name,application,description,version,branch,remotes $PKG_NAME) | column -t
+      # sort <(flatpak search --columns=name,application,description,version,branch,remotes $PKG_NAME) | column -t
+      flatpak search --columns=all $PKG_NAME
       echo -e "${NL}${CYAN}Done.${NC}${NL}"
     fi
   else
@@ -1081,7 +1220,7 @@ function pkg_install() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: pkg_install [flags] <package> -- Install packages on any Linux distribs."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <package> -- Install packages on any Debian / Arch Linux based distribs."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo -e "  -f | --flatpak${TAB}Use flatpak backend"
@@ -1317,7 +1456,7 @@ function enable_bbr() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: enable_bbr [flags] -- Enable 'BBR' congestion control protocol."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Enable 'BBR' congestion control protocol."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -1387,7 +1526,7 @@ function get_fs_size() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: get_fs_sze [flags] <mountpoint> -- Return size of given mountpoint."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <mountpoint> -- Return size of given mountpoint."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo -e "  -f | --free${TAB}Print free size instead of full size"
@@ -1422,7 +1561,7 @@ function get_file_size() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: get_file_sze [flags] <file> -- Return size of given file."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <file> -- Return size of given file."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo -e "  -H | --human-size${TAB}Print size in human friendly format"
@@ -1485,7 +1624,7 @@ function git_check() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: git_check [flags] -- Check 'git' repositories if they are updated."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Check 'git' repositories if they are updated."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -1517,7 +1656,7 @@ function git_init() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: git_init [flags] <username> <email> -- Initialize 'git' config."
+    echo -e "${NL}Usage: $FUNCNAME [flags] <username> <email> -- Initialize 'git' config."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -1567,7 +1706,7 @@ function git_owner_fix() {
 
   # Usage
   if [[ $1 == "-h" || $1 == "--help" ]]; then
-    echo -e "${NL}Usage: git_check [flags] -- Fix ownership issues that happens sometimes with 'git'."
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Fix ownership issues that happens sometimes with 'git'."
     echo -e "${NL}Flags:"
     echo -e "  -h | --help${TAB}Print this message and exit"
     echo
@@ -1650,6 +1789,298 @@ function describe_exit_code() {
     *) die "Unknown exit code given." ;;
   esac
 }
+function set_lto_args() {
+  if [[ ! -r /etc/profile.d/lto.sh ]]; then
+    echo 'export CC=clang' > /tmp/lto.sh
+    echo 'export LD=ld.lld' >> /tmp/lto.sh
+    echo 'export LLVM=1' >> /tmp/lto.sh
+    echo 'export LLVM_IAS=1' >> /tmp/lto.sh
+    sudo mv -v /tmp/lto.sh /etc/profile.d/
+  fi
+}
+function remove_lto_args() {
+  if [[ -r /etc/profile.d/lto.sh ]]; then
+    sudo rm -fv /etc/profile.d/lto.sh
+  fi
+}
+function make_boot_symlinks() {
+  # Config
+  local DRY_RUN=false
+  local DEBUG_MODE=false
+
+  # Internals
+  local DEFAULT_ARGS=" -sfn"
+  local INITRD_IMAGES ; INITRD_IMAGES=( $(find /boot -maxdepth 1 -type f -iname "initrd*" -exec basename {} \; | sort -h) )
+  local VMLINUZ_IMAGES ; VMLINUZ_IMAGES=( $(find /boot -maxdepth 1 -type f -iname "vmlinuz*" -exec basename {} \; | sort -h) )
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Create boot symlinks with latest and previous kernels."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo -e "  -d | --debug${TAB}Enable debug mode"
+    echo -e "  -n | --dry-run${TAB}Enable dry-run mode (print changes but not applying them)"
+    echo
+    return
+  fi
+
+  # Flags
+  [[ $1 == "-d" || $1 == "--debug" ]] && DEBUG_MODE=true
+  [[ $1 == "-n" || $1 == "--dry-run" ]] && DRY_RUN=true
+
+  # Args
+  [[ $DEBUG_MODE == true ]] && DEFAULT_ARGS+="v"
+
+  # Main
+  echo "make_boot_symlinks: Found ${#INITRD_IMAGES[@]} initrd images and ${#VMLINUZ_IMAGES[@]} vmlinuz images"
+  if [[ ${#INITRD_IMAGES[@]} -ne 0 && ${#VMLINUZ_IMAGES[@]} -ne 0 ]]; then
+    echo "make_boot_symlinks: Creating symlinks for ${#INITRD_IMAGES[@]} initrd images and ${#VMLINUZ_IMAGES[@]} vmlinuz images"
+    cd /boot || die "Can't move to '/boot' partition."
+    if [[ $DRY_RUN == true ]]; then
+      echo "[DRY-RUN] ln -sfvn '${INITRD_IMAGES[0]}' initrd.img"
+      echo "[DRY-RUN] ln -sfvn '${INITRD_IMAGES[1]}' initrd.img.old"
+      echo "[DRY-RUN] ln -sfvn '${VMLINUZ_IMAGES[0]}' vmlinuz"
+      echo "[DRY-RUN] ln -sfvn '${VMLINUZ_IMAGES[1]}' vmlinuz.old"
+    else
+      sudo ln $DEFAULT_ARGS "${INITRD_IMAGES[0]}" initrd.img
+      sudo ln $DEFAULT_ARGS "${INITRD_IMAGES[1]}" initrd.img.old
+      sudo ln $DEFAULT_ARGS "${VMLINUZ_IMAGES[0]}" vmlinuz
+      sudo ln $DEFAULT_ARGS "${VMLINUZ_IMAGES[1]}" vmlinuz.old
+    fi
+    cd $OLDPWD || die "Can't restore previous directory."
+  fi
+}
+function rainbow() {
+  # Internals
+  local BIN_LOLCAT ; BIN_LOLCAT=$(command -v lolcat 2>/dev/null)
+
+  # Usage
+  if [[ $# -eq 0 || $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] -- Add some rainbow in your terminal with 'lolcat'."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}${TAB}Print this message and exit"
+    echo -e "  -l | --list${TAB}List all supported aliases"
+    echo -e "  -i | --install${TAB}Install supported aliases in your Bash profile"
+    echo -e "  -r | --remove${TAB}${TAB}Remove installed aliases from your Bash profile"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ -z $BIN_LOLCAT ]] && die "You must have 'lolcat' installed to run this command."
+
+  # Main
+  while [[ $# -ne 0 ]]; do
+    case $1 in
+      -i|--install)
+        # Colored 'du'
+        alias duc='x(){ du "$@" | lolcat; unset -f x; }; x'
+
+        # Colored 'df'
+        alias dfc='x(){ df "$@" | lolcat; unset -f x; }; x'
+
+        # Colored 'ls'
+        alias llc='x(){ ls -halF "$@" | lolcat; unset -f x; }; x'
+
+        # Colored 'findmnt'
+        alias fmc='x(){ findmnt "$@" | lolcat; unset -f x; }; x'
+
+        # Colored 'printenv'
+        alias pec='x(){ printenv | sort | lolcat; unset -f x; }; x'
+
+        # Colored 'cowsay'
+        alias csc='x(){ cowsay "$@" | lolcat; unset -f x; }; x'
+
+        # Colored 'figlet'
+        alias flc='x(){ figlet "$@" | lolcat; unset -f x; }; x'
+
+        shift
+      ;;
+      -l|--list)
+        echo -e "${NL}List of supported 'rainbow' colored aliases${NL}"
+        echo -e "  * duc${TAB}${TAB}- Rainbow colored 'du' alias"
+        echo -e "  * dfc${TAB}${TAB}- Rainbow colored 'df' alias"
+        echo -e "  * llc${TAB}${TAB}- Rainbow colored 'ls' alias"
+        echo -e "  * fmc${TAB}${TAB}- Rainbow colored 'findmnt' alias"
+        echo -e "  * pec${TAB}${TAB}- Rainbow colored 'printenv' alias"
+        echo -e "  * csc${TAB}${TAB}- Rainbow colored 'cowsay' alias"
+        echo -e "  * flc${TAB}${TAB}- Rainbow colored 'figlet' alias"
+        echo
+        return
+      ;;
+      -r|--remove)
+        unalias llc
+        unalias fmc
+        unalias pec
+        unalias csc
+        unalias flc
+
+        shift
+      ;;
+    esac
+  done
+}
+function weather() {
+  # Config
+  local BASE_URL="https://wttr.in"
+  local DEFAULT_ARGS="?"
+
+  # Internals
+  local AP_CODE
+  local LOCATION
+
+  # Usage
+  if [[ $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] [location] -- Show weather in terminal with the 'wttr.in' service."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}Print this message and exit"
+    echo -e "  -a | --airport <code>${TAB}Get weather for given airport"
+    echo -e "  -m | --moon [date]${TAB}Show moon phases"
+    echo -e "  -f | --no-follow-links [date]${TAB}Don't output follow links"
+    echo -e "  -n | --narrow [date]${TAB}Print only today's forecast"
+    echo
+    return
+  fi
+
+  # Flags
+  while [[ $# -ne 0 ]]; do
+    case $1 in
+      -a|--airport)
+        AP_CODE="$1"
+        shift
+      ;;
+      -f|--no-follow-links)
+        DEFAULT_ARGS+="F"
+        shift
+      ;;
+      -n|--narrow)
+        DEFAULT_ARGS+="n"
+        shift
+      ;;
+      -m|--moon)
+        BASE_URL+="/moon"
+        shift
+      ;;
+      *)
+        LOCATION="$1"
+        [[ -n $LOCATION ]] && BASE_URL+="/${LOCATION}"
+        shift
+      ;;
+    esac
+  done
+
+  # Init
+  BASE_URL+="$DEFAULT_ARGS"
+
+  # Main
+  get_url -q "$BASE_URL"
+}
+function trash() {
+  # Config
+  local CLEAN_MODE=false
+  local FORCED_MODE=false
+  local LIST_MODE=false
+
+  # Internals
+  local BIN_GIO ; BIN_GIO=$(command -v gio 2>/dev/null)
+  local LOCATION
+
+  # Usage
+  if [[ $# -eq 0 || $1 == "-h" || $1 == "--help" ]]; then
+    echo -e "${NL}Usage: $FUNCNAME [flags] [location] -- Manage trash from terminal."
+    echo -e "${NL}Flags:"
+    echo -e "  -h | --help${TAB}${TAB}Print this message and exit"
+    echo -e "  -l | --list${TAB}Show trash content"
+    echo -e "  -e | --empty${TAB}Empty the trash"
+    echo -e "  -f | --force${TAB}Force move to trash"
+    echo
+    return
+  fi
+
+  # Checks
+  [[ -z $BIN_GIO ]] && die "You must have 'gio' installed to run this command."
+
+  # Flags
+  while [[ $# -ne 0 ]]; do
+    case $1 in
+      -l|--list)
+        LIST_MODE=true
+        shift
+      ;;
+      -e|--empty)
+        CLEAN_MODE=true
+        shift
+      ;;
+      -f|--force)
+        FORCED_MODE=true
+        shift
+      ;;
+      *)
+        LOCATION="$1"
+        shift
+      ;;
+    esac
+  done
+
+  # Main
+  if [[ $LIST_MODE == true ]]; then
+    gio list -lhu trash://
+  elif [[ $CLEAN_MODE == true ]]; then
+    gio trash --empty
+  elif [[ $FORCED_MODE == true ]]; then
+    [[ -z $LOCATION ]] && die "Missing argument: location"
+    gio trash --force "$LOCATION"
+  else
+    [[ -z $LOCATION ]] && die "Missing argument: location"
+    gio trash "$LOCATION"
+  fi
+}
+function fssh() {
+  # Internals
+  local BIN_HPNSSH ; BIN_HPNSSH=$(command -v hpnssh 2>/dev/null)
+
+  # Main
+  if [[ -z $BIN_HPNSSH ]]; then
+    die "You must have 'hpnssh' installed to run this command."
+  else
+    hpnssh -p22 "$@"
+  fi
+}
+function fscp() {
+  # Internals
+  local BIN_HPNSCP=$(command -v hpnscp 2>/dev/null)
+
+  # Main
+  if [[ -z $BIN_HPNSCP ]]; then
+    die "You must have 'hpnssh' installed to run this command."
+  else
+    hpnscp -P22 "$@"
+  fi
+}
+function pcp() {
+  # Internals
+  local WRAPPER
+
+  # Init
+  [[ -n $(command -v rsyncy 2>/dev/null) ]] && WRAPPER="rsyncy"
+  [[ -n $(command -v rsync 2>/dev/null) && -z $WRAPPER ]] && WRAPPER="rsync"
+
+  # Main
+  $WRAPPER -aP "$@"
+}
+function pmv() {
+  # Internals
+  local WRAPPER
+
+  # Init
+  [[ -n $(command -v rsyncy 2>/dev/null) ]] && WRAPPER="rsyncy"
+  [[ -n $(command -v rsync 2>/dev/null) && -z $WRAPPER ]] && WRAPPER="rsync"
+
+  # Main
+  $WRAPPER -aP --remove-source-files "$@"
+}
+
+# Special method for my crew ;)
 function thc_greetings() {
   echo -e "${NL}${CYAN}Greetings ${WHITE}to the ${GREEN}T${YELLOW}H${RED}C${WHITE} ${PURPLE}hacking${WHITE} group!${NC}${NL}"
 }
